@@ -1,6 +1,10 @@
 import { logger } from '../utils/logger.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -14,7 +18,7 @@ async function runIntegrationTests(): Promise<void> {
     // Run Slack integration tests
     logger.info('Running Slack integration tests...');
     try {
-      const slackTestPath = join(__dirname, 'tests/integration/slack-integration.test.js');
+      const slackTestPath = join(__dirname, 'tests/integration/slack-integration.test.ts');
       const slackTest = await import(slackTestPath);
       await slackTest.default();
       slackTestsPassed = true;
@@ -25,7 +29,7 @@ async function runIntegrationTests(): Promise<void> {
     // Run database integration tests
     logger.info('\nRunning database integration tests...');
     try {
-      const dbTestPath = join(__dirname, 'tests/integration/database.test.js');
+      const dbTestPath = join(__dirname, 'tests/integration/database.test.ts');
       const dbTest = await import(dbTestPath);
       await dbTest.default();
       dbTestsPassed = true;
