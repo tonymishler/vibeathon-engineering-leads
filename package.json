@@ -1,0 +1,34 @@
+{
+  "name": "vibeathon-engineering-leads",
+  "version": "1.0.0",
+  "description": "Tool for analyzing Slack and Google Docs for engineering opportunities",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node src/scripts/tests/unit/channel-filter.test.js",
+    "test:integration": "npm run test:integration:slack && npm run test:integration:db",
+    "test:integration:slack": "node src/scripts/tests/integration/slack-integration.test.js",
+    "test:integration:db": "node src/scripts/tests/integration/database.test.js",
+    "lint": "eslint src/",
+    "db:init": "node src/scripts/init-db.js",
+    "analyze:channels": "node src/scripts/analyze-channels.js"
+  },
+  "keywords": [
+    "slack",
+    "google-docs",
+    "analysis",
+    "opportunities"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@browsermcp/mcp": "latest",
+    "@modelcontextprotocol/sdk": "latest",
+    "dotenv": "latest",
+    "sqlite": "^5.1.1",
+    "sqlite3": "latest"
+  }
+}
