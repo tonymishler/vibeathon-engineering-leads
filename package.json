@@ -3,18 +3,34 @@
   "version": "1.0.0",
   "description": "Tool for analyzing Slack and Google Docs for engineering opportunities",
   "type": "module",
-  "main": "src/index.js",
+  "main": "src/index.ts",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "test": "npm run test:unit && npm run test:integration",
-    "test:unit": "node src/scripts/tests/unit/channel-filter.test.js",
-    "test:integration": "npm run test:integration:slack && npm run test:integration:db",
-    "test:integration:slack": "node src/scripts/tests/integration/slack-integration.test.js",
-    "test:integration:db": "node src/scripts/tests/integration/database.test.js",
+    "start": "ts-node src/index.ts",
+    "dev": "ts-node-dev --respawn src/index.ts",
+    "build": "tsc",
+    "test": "NODE_OPTIONS='--loader ts-node/esm' node --experimental-specifier-resolution=node src/scripts/test.ts",
+    "test:unit": "npm run test:unit:channel-filter && npm run test:unit:config && npm run test:unit:rate-limiter",
+    "test:unit:channel-filter": "NODE_OPTIONS='--loader ts-node/esm' node --experimental-specifier-resolution=node src/scripts/tests/unit/channel-filter.test.ts",
+    "test:unit:config": "NODE_OPTIONS='--loader ts-node/esm' node --experimental-specifier-resolution=node src/scripts/tests/unit/config-validator.test.ts",
+    "test:unit:rate-limiter": "NODE_OPTIONS='--loader ts-node/esm' node --experimental-specifier-resolution=node src/scripts/tests/unit/rate-limiter.test.ts",
+    "test:integration": "node --loader ts-node/esm --experimental-specifier-resolution=node src/scripts/test-integration.ts",
+    "test:integration:slack": "node --loader ts-node/esm --experimental-specifier-resolution=node src/scripts/tests/integration/slack-integration.test.ts",
+    "test:integration:db": "node --loader ts-node/esm --experimental-specifier-resolution=node src/scripts/tests/integration/database.test.ts",
     "lint": "eslint src/",
-    "db:init": "node src/scripts/init-db.js",
-    "analyze:channels": "node src/scripts/analyze-channels.js"
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.{js,ts,json}\"",
+    "prepare": "husky install",
+    "db:init": "NODE_OPTIONS='--loader ts-node/esm' node --experimental-specifier-resolution=node src/scripts/init-db.ts",
+    "analyze:channels": "ts-node src/scripts/analyze-channels.ts"
+  },
+  "lint-staged": {
+    "*.{js,ts}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
   },
   "keywords": [
     "slack",
@@ -30,5 +46,19 @@
     "dotenv": "latest",
     "sqlite": "^5.1.1",
     "sqlite3": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@typescript-eslint/eslint-plugin": "latest",
+    "@typescript-eslint/parser": "latest",
+    "eslint": "latest",
+    "eslint-config-prettier": "latest",
+    "eslint-plugin-prettier": "latest",
+    "husky": "latest",
+    "lint-staged": "latest",
+    "prettier": "latest",
+    "ts-node": "latest",
+    "ts-node-dev": "latest",
+    "typescript": "latest"
   }
 }

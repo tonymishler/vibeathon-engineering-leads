@@ -1,8 +1,23 @@
 import assert from 'assert';
-import { logger } from '../../../utils/logger.js';
+import { logger } from '../../../utils/logger';
+
+interface MockChannel {
+  id: string;
+  name: string;
+  topic: string;
+  purpose: string;
+  member_count: number;
+}
+
+interface TestResults {
+  priorityChannelDetection: boolean;
+  offTopicExclusion: boolean;
+  standardChannelClassification: boolean;
+  emptyInputHandling: boolean;
+}
 
 // Mock channel data for testing
-const mockChannels = [
+const mockChannels: MockChannel[] = [
   {
     id: 'C001',
     name: 'general',
@@ -33,9 +48,9 @@ const mockChannels = [
   }
 ];
 
-function testChannelFiltering() {
+function testChannelFiltering(): void {
   logger.info('Starting channel filtering unit tests...');
-  const results = {
+  const results: TestResults = {
     priorityChannelDetection: false,
     offTopicExclusion: false,
     standardChannelClassification: false,
@@ -74,7 +89,7 @@ function testChannelFiltering() {
     logger.info('✓ Standard channel classification successful');
 
     // Test 4: Empty Input Handling
-    const emptyResult = [].filter(channel => 
+    const emptyResult = ([] as MockChannel[]).filter(channel => 
       !channel.name.includes('off-topic')
     );
     assert.strictEqual(emptyResult.length, 0);

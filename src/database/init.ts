@@ -1,18 +1,22 @@
 import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import { Database, open } from 'sqlite';
 import path from 'path';
 import dotenv from 'dotenv';
+import { mkdir } from 'fs/promises';
+import { logger } from '../utils/logger';
 
 dotenv.config();
 
-const dbPath = process.env.DB_PATH || './data/analysis.sqlite';
+const dbPath: string = process.env.DB_PATH || './data/analysis.sqlite';
 
-// Ensure the directory exists
-import { mkdir } from 'fs/promises';
-await mkdir(path.dirname(dbPath), { recursive: true });
+async function ensureDbDirectory(): Promise<void> {
+  await mkdir(path.dirname(dbPath), { recursive: true });
+}
 
-async function initializeDatabase() {
+async function initializeDatabase(): Promise<Database> {
   try {
+    await ensureDbDirectory();
+    
     const db = await open({
       filename: dbPath,
       driver: sqlite3.Database
@@ -96,10 +100,10 @@ async function initializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_opportunities_confidence ON opportunities(confidence_score);
     `);
 
-    console.log('Database initialized successfully');
+    logger.info('Database initialized successfully');
     return db;
   } catch (error) {
-    console.error('Error initializing database:', error);
+    logger.error('Error initializing database:', error);
     throw error;
   }
 }

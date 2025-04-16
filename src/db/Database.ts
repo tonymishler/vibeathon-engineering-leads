@@ -1,15 +1,53 @@
 import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import { Database as SQLiteDatabase, open } from 'sqlite';
 import path from 'path';
-import { logger } from '../utils/logger.js';
+import { logger } from '../utils/logger';
+
+interface Channel {
+  channel_id: string;
+  channel_name: string;
+  channel_type: 'priority' | 'standard' | 'off-topic';
+  topic?: string;
+  purpose?: string;
+  member_count?: number;
+  last_processed?: Date;
+  created_at?: Date;
+}
+
+interface Message {
+  message_id: string;
+  channel_id: string;
+  author: string;
+  content?: string;
+  timestamp: Date;
+  thread_id?: string;
+  has_attachments?: boolean;
+  reaction_count?: number;
+  reply_count?: number;
+  created_at?: Date;
+}
+
+interface ChannelFilter {
+  name?: string;
+  type?: 'priority' | 'standard' | 'off-topic';
+}
+
+interface MessageFilter {
+  channel_id?: string;
+  thread_id?: string;
+  after?: Date;
+}
 
 export class Database {
+  private db: SQLiteDatabase | null;
+  private dbPath: string;
+
   constructor() {
     this.db = null;
     this.dbPath = process.env.DB_PATH || path.join(process.cwd(), 'data', 'analysis.sqlite');
   }
 
-  async init() {
+  async init(): Promise<void> {
     try {
       this.db = await open({
         filename: this.dbPath,
@@ -54,30 +92,35 @@ export class Database {
     }
   }
 
-  async close() {
+  async close(): Promise<void> {
     if (this.db) {
       await this.db.close();
       this.db = null;
     }
   }
 
-  async beginTransaction() {
+  async beginTransaction(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
     await this.db.run('BEGIN TRANSACTION');
   }
 
-  async commitTransaction() {
+  async commitTransaction(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
     await this.db.run('COMMIT');
   }
 
-  async rollbackTransaction() {
+  async rollbackTransaction(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
     await this.db.run('ROLLBACK');
   }
 
-  async executeQuery(query, params = []) {
+  async executeQuery<T>(query: string, params: any[] = []): Promise<T[]> {
+    if (!this.db) throw new Error('Database not initialized');
     return await this.db.all(query, params);
   }
 
-  async storeChannel(channel) {
+  async storeChannel(channel: Channel): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
     const { channel_id, channel_name, channel_type, topic, purpose, member_count } = channel;
     
     const sql = `
@@ -102,7 +145,8 @@ export class Database {
     ]);
   }
 
-  async storeMessage(message) {
+  async storeMessage(message: Message): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
     const { message_id, channel_id, author, content, timestamp, thread_id } = message;
     
     const sql = `
@@ -125,9 +169,10 @@ export class Database {
     ]);
   }
 
-  async getChannels(filter = {}) {
+  async getChannels(filter: ChannelFilter = {}): Promise<Channel[]> {
+    if (!this.db) throw new Error('Database not initialized');
     let sql = 'SELECT * FROM channels WHERE 1=1';
-    const params = [];
+    const params: any[] = [];
 
     if (filter.name) {
       sql += ' AND channel_name LIKE ?';
@@ -139,12 +184,14 @@ export class Database {
       params.push(filter.type);
     }
 
-    return await this.db.all(sql, params);
+    const results = await this.db.all(sql, params);
+    return results as Channel[];
   }
 
-  async getMessages(filter = {}) {
+  async getMessages(filter: MessageFilter = {}): Promise<Message[]> {
+    if (!this.db) throw new Error('Database not initialized');
     let sql = 'SELECT * FROM messages WHERE 1=1';
-    const params = [];
+    const params: any[] = [];
 
     if (filter.channel_id) {
       sql += ' AND channel_id = ?';
@@ -161,6 +208,7 @@ export class Database {
       params.push(filter.after);
     }
 
-    return await this.db.all(sql, params);
+    const results = await this.db.all(sql, params);
+    return results as Message[];
   }
 } 
