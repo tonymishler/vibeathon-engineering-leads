@@ -94,9 +94,16 @@ async function processChannel(channel, slackService, geminiService, dbQueries) {
       oldest: new Date(Date.now() - TIME_WINDOW_DAYS * 24 * 60 * 60 * 1000).getTime() / 1000
     });
 
+    logger.info(`Found ${messages.length} messages and ${threads.size} threads in channel ${channel.name}`);
+    
+    if (messages.length > 0) {
+      logger.debug('Sample message:', JSON.stringify(messages[0], null, 2));
+    }
+
     // Store messages in database
     await dbQueries.batchInsertMessages(messages.map(msg => msg.toDatabase()));
     for (const [threadId, replies] of threads.entries()) {
+      logger.info(`Processing thread ${threadId} with ${replies.length} replies`);
       await dbQueries.batchInsertMessages(replies.map(msg => msg.toDatabase()));
     }
 
@@ -116,7 +123,13 @@ async function processChannel(channel, slackService, geminiService, dbQueries) {
     });
 
     // Analyze for opportunities
+    logger.info(`Analyzing ${messages.length} messages for opportunities...`);
     const analysis = await geminiService.analyzeChannelContent(messages, channel);
+    logger.info(`Analysis complete. Found ${analysis?.opportunities?.length || 0} opportunities`);
+
+    if (analysis?.opportunities?.length > 0) {
+      logger.debug('First opportunity:', JSON.stringify(analysis.opportunities[0], null, 2));
+    }
 
     if (analysis?.opportunities) {
       for (const opportunity of analysis.opportunities) {
@@ -164,24 +177,35 @@ async function processChannel(channel, slackService, geminiService, dbQueries) {
 }
 
 async function analyzeChannels() {
+  let db;
+  let dbQueries;
+  
   try {
     // Initialize database
     const dbPath = path.join(process.cwd(), 'data', 'analysis.sqlite');
     await initializeDatabase(dbPath);
     
     // Create database instance and queries
-    const db = new Database(dbPath);
-    const dbQueries = new DatabaseQueries(db);
+    db = new Database(dbPath);
+    dbQueries = new DatabaseQueries(db);
 
     await slackService.initialize();
     await geminiService.initialize();
 
     // Get all channels
     const channels = await slackService.listChannels();
-    logger.info(`Found ${channels.length} channels to process`);
+    logger.info(`Found ${channels.length} total channels`);
+
+    // Filter for MFG channels
+    const mfgChannels = channels.filter(channel => 
+      channel.name.toLowerCase().includes('mfg') ||
+      channel.topic?.value?.toLowerCase().includes('mfg') ||
+      channel.purpose?.value?.toLowerCase().includes('mfg')
+    );
+    logger.info(`Found ${mfgChannels.length} MFG-related channels to process`);
 
     // Process each channel
-    for (const channel of channels) {
+    for (const channel of mfgChannels) {
       try {
         await processChannel(channel, slackService, geminiService, dbQueries);
       } catch (error) {
@@ -197,16 +221,19 @@ async function analyzeChannels() {
     process.exit(1);
   } finally {
     try {
-      // Clean up all services
-      await Promise.all([
-        slackService.disconnect(),
-        geminiService.disconnect(),
-        dbQueries.close()
-      ]);
+      // Clean up services
+      await slackService.disconnect();
+      await geminiService.disconnect();
+      
+      // Close database connection if it was opened
+      if (dbQueries) {
+        await dbQueries.close();
+      }
     } catch (cleanupError) {
       logger.error('Error during cleanup:', cleanupError);
     }
   }
 }
 
+// Run the analysis
 analyzeChannels(); 

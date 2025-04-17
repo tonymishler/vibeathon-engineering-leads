@@ -22,7 +22,7 @@
     "format": "prettier --write \"src/**/*.{js,ts,json}\"",
     "prepare": "husky install",
     "db:init": "NODE_OPTIONS='--loader ts-node/esm' node --experimental-specifier-resolution=node src/scripts/init-db.ts",
-    "analyze:channels": "ts-node src/scripts/analyze-channels.ts"
+    "analyze:channels": "NODE_OPTIONS='--loader ts-node/esm' node --experimental-specifier-resolution=node src/scripts/analyze-channels.js"
   },
   "lint-staged": {
     "*.{js,ts}": [

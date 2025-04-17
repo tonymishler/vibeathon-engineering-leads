@@ -1,13 +1,20 @@
-import { mcpClient } from './mcp-client.js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { logger } from '../utils/logger.js';
 
 class GeminiService {
   constructor() {
     this.isInitialized = false;
+    this.model = null;
   }
 
   async initialize() {
     if (!this.isInitialized) {
-      await mcpClient.connect('browser');
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY environment variable is required');
+      }
+      
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      this.model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
       this.isInitialized = true;
     }
   }
@@ -40,10 +47,25 @@ Input channels:
 ${JSON.stringify(channels, null, 2)}
 `;
 
-    // TODO: Replace with actual Gemini API call once integrated
-    // For now, we'll do the filtering programmatically
-    const result = this.simulateGeminiFiltering(channels);
-    return result;
+    try {
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      const parsedResult = JSON.parse(text);
+      
+      // Validate and transform the response
+      return {
+        priority_channels: Array.isArray(parsedResult.priority_channels) ? parsedResult.priority_channels : [],
+        standard_channels: Array.isArray(parsedResult.standard_channels) ? parsedResult.standard_channels : []
+      };
+    } catch (error) {
+      // Use console.error as fallback if logger is not available
+      const logError = logger?.error || console.error;
+      logError('Failed to filter channels:', error);
+      
+      // Fall back to simulated filtering if the API call fails
+      return this.simulateGeminiFiltering(channels);
+    }
   }
 
   // Temporary method to simulate Gemini's filtering logic
@@ -89,9 +111,37 @@ ${JSON.stringify(channels, null, 2)}
   async analyzeChannelContent(messages, channelInfo) {
     await this.initialize();
 
-    const prompt = `
-Analyze these Slack messages from the channel "${channelInfo.name}" to identify potential engineering opportunities.
-Focus on:
+    const prompt = `You are a JSON-only response API. You must respond with ONLY valid JSON, no markdown formatting, no code blocks, no natural language. The response must be an object with an "opportunities" array containing opportunity objects.
+
+Task: Analyze these Slack messages from the channel "${channelInfo.name}" to identify potential engineering opportunities.
+
+Required response format:
+{
+  "opportunities": [
+    {
+      "type": "feature|integration|automation|optimization",
+      "title": "Brief descriptive title",
+      "description": "Detailed description of the opportunity",
+      "evidence": [
+        {
+          "message_id": "ID of the relevant message",
+          "author": "message author",
+          "content": "relevant message content",
+          "relevance_note": "why this message supports the opportunity"
+        }
+      ],
+      "implicit_insights": "patterns or insights not directly stated",
+      "confidence_score": 0.0-1.0,
+      "impact_assessment": {
+        "scope": "team|department|organization",
+        "effort_estimate": "small|medium|large",
+        "potential_value": "low|medium|high"
+      }
+    }
+  ]
+}
+
+Focus on identifying opportunities related to:
 1. Client requests or needs that could benefit from custom development
 2. Recurring manual processes that could be automated
 3. Integration opportunities between different systems
@@ -100,71 +150,66 @@ Focus on:
 6. Technical debt or maintenance needs
 7. Cross-team collaboration bottlenecks
 
-For each opportunity identified, provide:
-{
-  "type": "feature|integration|automation|optimization",
-  "title": "Brief descriptive title",
-  "description": "Detailed description of the opportunity",
-  "evidence": [{
-    "message_id": "ID of the relevant message",
-    "author": "message author",
-    "content": "relevant message content",
-    "relevance_note": "why this message supports the opportunity"
-  }],
-  "implicit_insights": "patterns or insights not directly stated",
-  "confidence_score": 0.0-1.0,
-  "impact_assessment": {
-    "scope": "team|department|organization",
-    "effort_estimate": "small|medium|large",
-    "potential_value": "low|medium|high"
-  }
-}
+Remember: Your response must be ONLY the JSON object, with no markdown formatting, no code blocks, and no additional text before or after.
 
 Channel Context:
 ${JSON.stringify(channelInfo, null, 2)}
 
 Messages to Analyze:
-${JSON.stringify(messages.slice(0, 50), null, 2)}
-`;
+${JSON.stringify(messages.slice(0, 50), null, 2)}`;
 
     try {
-      // TODO: Replace with actual Gemini API call once integrated
-      const response = await mcpClient.callTool('gemini_generate', {
-        prompt,
-        temperature: 0.7,
-        max_tokens: 2048
+      const result = await this.model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2048,
+          topP: 0.8,
+          topK: 40
+        }
       });
 
-      if (!response?.content?.[0]?.text) {
-        throw new Error('Invalid response from Gemini API');
-      }
-
-      const analysis = JSON.parse(response.content[0].text);
+      const response = await result.response;
+      let text = response.text().trim();
       
-      // Validate and transform opportunities
-      const opportunities = Array.isArray(analysis.opportunities) 
-        ? analysis.opportunities.map(opp => ({
-            ...opp,
-            confidence_score: parseFloat(opp.confidence_score) || 0.5,
-            evidence: Array.isArray(opp.evidence) ? opp.evidence : [],
-            impact_assessment: {
-              scope: opp.impact_assessment?.scope || 'team',
-              effort_estimate: opp.impact_assessment?.effort_estimate || 'medium',
-              potential_value: opp.impact_assessment?.potential_value || 'medium'
-            }
-          }))
-        : [];
+      // Remove markdown code block if present
+      if (text.startsWith('```')) {
+        text = text.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
+      }
+      
+      try {
+        const analysis = JSON.parse(text);
+        
+        // Validate and transform opportunities
+        const opportunities = Array.isArray(analysis.opportunities) 
+          ? analysis.opportunities.map(opp => ({
+              ...opp,
+              confidence_score: parseFloat(opp.confidence_score) || 0.5,
+              evidence: Array.isArray(opp.evidence) ? opp.evidence : [],
+              impact_assessment: {
+                scope: opp.impact_assessment?.scope || 'team',
+                effort_estimate: opp.impact_assessment?.effort_estimate || 'medium',
+                potential_value: opp.impact_assessment?.potential_value || 'medium'
+              }
+            }))
+          : [];
 
-      return { opportunities };
+        return { opportunities };
+      } catch (parseError) {
+        logger.error('Failed to parse Gemini response as JSON:', parseError);
+        logger.debug('Raw response:', text);
+        return { opportunities: [] };
+      }
     } catch (error) {
-      logger.error('Failed to analyze channel content:', error);
+      const logError = logger?.error || console.error;
+      logError('Failed to analyze channel content:', error);
       return { opportunities: [] };
     }
   }
 
   async disconnect() {
     if (this.isInitialized) {
-      await mcpClient.disconnect();
+      this.model = null;
       this.isInitialized = false;
     }
   }

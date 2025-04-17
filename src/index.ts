@@ -3,7 +3,6 @@ import { logger } from './utils/logger.js';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { dbQueries } from './database/queries.js';
 import { SlackRequest, McpResponse } from './types/slack.js';
 
 // Load environment variables

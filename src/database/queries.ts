@@ -169,29 +169,34 @@ export class DatabaseQueries {
       const stmt = this.db.prepare(sql);
       
       try {
-        this.db.serialize(() => {
+        // Only start a transaction if we're not already in one
+        const needsTransaction = !this.inTransaction;
+        
+        if (needsTransaction) {
           this.db.run('BEGIN TRANSACTION');
-          
-          for (const msg of messages) {
-            stmt.run([
-              msg.message_id,
-              msg.channel_id,
-              msg.user_id,
-              msg.content,
-              msg.timestamp,
-              msg.thread_ts,
-              msg.reply_count,
-              msg.link_count,
-              msg.mention_count,
-              msg.reaction_count
-            ], (err: Error | null) => {
-              if (err) {
-                logger.error('Error in batch message insert:', err);
-                throw err;
-              }
-            });
-          }
-          
+        }
+        
+        for (const msg of messages) {
+          stmt.run([
+            msg.message_id,
+            msg.channel_id,
+            msg.user_id,
+            msg.content,
+            msg.timestamp,
+            msg.thread_ts,
+            msg.reply_count,
+            msg.link_count,
+            msg.mention_count,
+            msg.reaction_count
+          ], (err: Error | null) => {
+            if (err) {
+              logger.error('Error in batch message insert:', err);
+              throw err;
+            }
+          });
+        }
+        
+        if (needsTransaction) {
           this.db.run('COMMIT', (err: Error | null) => {
             if (err) {
               logger.error('Error committing transaction:', err);
@@ -200,10 +205,14 @@ export class DatabaseQueries {
               resolve();
             }
           });
-        });
-      } catch (err) {
-        this.db.run('ROLLBACK');
-        reject(err);
+        } else {
+          resolve();
+        }
+      } catch (error) {
+        if (!this.inTransaction) {
+          this.db.run('ROLLBACK');
+        }
+        reject(error);
       } finally {
         stmt.finalize();
       }
@@ -316,6 +325,48 @@ export class DatabaseQueries {
           resolve();
         }
       );
+    });
+  }
+
+  async upsertChannelContext(context: {
+    context_id: string;
+    channel_id: string;
+    start_date: Date;
+    end_date: Date;
+    message_count: number;
+    window_type: string;
+    context_data: string;
+  }): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT INTO channel_contexts (
+          context_id, channel_id, start_date, end_date,
+          message_count, window_type, context_data
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(context_id) DO UPDATE SET
+          channel_id = excluded.channel_id,
+          start_date = excluded.start_date,
+          end_date = excluded.end_date,
+          message_count = excluded.message_count,
+          window_type = excluded.window_type,
+          context_data = excluded.context_data`;
+      
+      this.db.run(sql, [
+        context.context_id,
+        context.channel_id,
+        context.start_date.toISOString(),
+        context.end_date.toISOString(),
+        context.message_count,
+        context.window_type,
+        context.context_data
+      ], (err: Error | null) => {
+        if (err) {
+          logger.error('Error upserting channel context:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
     });
   }
 } 

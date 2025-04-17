@@ -110,18 +110,29 @@ class SlackService {
         }
       });
 
-      if (!result.messages || result.messages.length === 0) {
+      // Parse MCP response
+      const content = result?.content;
+      if (!Array.isArray(content) || content.length === 0 || !content[0]?.text) {
+        console.warn('Invalid MCP response format:', result);
         break;
       }
 
-      const newMessages = result.messages.map(msg => Message.fromSlackAPI(msg, channelId));
+      const slackResponse = JSON.parse(content[0].text);
+      if (!slackResponse.ok || !Array.isArray(slackResponse.messages)) {
+        console.warn('Invalid Slack response:', slackResponse);
+        break;
+      }
+
+      const newMessages = slackResponse.messages.map(msg => Message.fromSlackAPI(msg, channelId));
       messages.push(...newMessages);
 
       // Update oldest timestamp for pagination
-      oldestTimestamp = messages[messages.length - 1].timestamp.getTime() / 1000;
+      if (messages.length > 0) {
+        oldestTimestamp = messages[messages.length - 1].timestamp.getTime() / 1000;
+      }
 
       // If we got fewer messages than requested, we've reached the end
-      if (result.messages.length < batchSize) {
+      if (slackResponse.messages.length < batchSize) {
         break;
       }
 
@@ -143,11 +154,20 @@ class SlackService {
       }
     });
 
-    if (!result.messages) {
+    // Parse MCP response
+    const content = result?.content;
+    if (!Array.isArray(content) || content.length === 0 || !content[0]?.text) {
+      console.warn('Invalid MCP response format:', result);
       return [];
     }
 
-    return result.messages.map(msg => Message.fromSlackAPI(msg, channelId));
+    const slackResponse = JSON.parse(content[0].text);
+    if (!slackResponse.ok || !Array.isArray(slackResponse.messages)) {
+      console.warn('Invalid Slack response:', slackResponse);
+      return [];
+    }
+
+    return slackResponse.messages.map(msg => Message.fromSlackAPI(msg, channelId));
   }
 
   // Helper method to process messages with their threads
