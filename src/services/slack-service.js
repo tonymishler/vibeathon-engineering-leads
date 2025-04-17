@@ -1,4 +1,5 @@
-import { mcpClient } from './mcp-client.js';
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Channel } from '../models/channel.js';
 import { Message } from '../models/message.js';
 import dotenv from 'dotenv';
@@ -8,11 +9,31 @@ dotenv.config();
 class SlackService {
   constructor() {
     this.isInitialized = false;
+    this.client = null;
+    this.transport = null;
   }
 
   async initialize() {
     if (!this.isInitialized) {
-      await mcpClient.connect('slack');
+      // Create transport
+      this.transport = new StdioClientTransport({
+        command: "/opt/homebrew/bin/node",
+        args: ["./node_modules/@modelcontextprotocol/server-slack/dist/index.js"],
+        env: {
+          SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN,
+          SLACK_TEAM_ID: process.env.SLACK_TEAM_ID,
+          NODE_ENV: "development",
+          PATH: process.env.PATH
+        }
+      });
+
+      // Create client
+      this.client = new Client({
+        name: "vibeathon-slack-client",
+        version: "1.0.0"
+      });
+
+      await this.client.connect(this.transport);
       this.isInitialized = true;
     }
   }
@@ -25,9 +46,12 @@ class SlackService {
     const limit = options.limit || 200; // Maximum allowed by Slack API
 
     do {
-      const response = await mcpClient.callTool('slack_list_channels', {
-        limit,
-        ...(cursor ? { cursor } : {})
+      const response = await this.client.callTool({
+        name: "slack_list_channels",
+        arguments: {
+          limit,
+          ...(cursor ? { cursor } : {})
+        }
       });
 
       const content = response?.content;
@@ -77,10 +101,13 @@ class SlackService {
     while (messages.length < limit) {
       const batchSize = Math.min(100, limit - messages.length); // Slack API limit is 100 per request
 
-      const result = await mcpClient.callTool('slack_get_channel_history', {
-        channel_id: channelId,
-        limit: batchSize,
-        ...(oldestTimestamp && { oldest: oldestTimestamp })
+      const result = await this.client.callTool({
+        name: "slack_get_channel_history",
+        arguments: {
+          channel_id: channelId,
+          limit: batchSize,
+          ...(oldestTimestamp && { oldest: oldestTimestamp })
+        }
       });
 
       if (!result.messages || result.messages.length === 0) {
@@ -108,9 +135,12 @@ class SlackService {
   async getThreadReplies(channelId, threadTs) {
     await this.initialize();
 
-    const result = await mcpClient.callTool('slack_get_thread_replies', {
-      channel_id: channelId,
-      thread_ts: threadTs
+    const result = await this.client.callTool({
+      name: "slack_get_thread_replies",
+      arguments: {
+        channel_id: channelId,
+        thread_ts: threadTs
+      }
     });
 
     if (!result.messages) {
@@ -151,8 +181,10 @@ class SlackService {
   }
 
   async disconnect() {
-    if (this.isInitialized) {
-      await mcpClient.disconnect();
+    if (this.isInitialized && this.transport) {
+      await this.transport.close();
+      this.transport = null;
+      this.client = null;
       this.isInitialized = false;
     }
   }

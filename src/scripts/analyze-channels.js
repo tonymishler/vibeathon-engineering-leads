@@ -1,8 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
+import pkg from 'sqlite3';
+const { Database } = pkg;
 import { DatabaseQueries } from '../database/queries.js';
-import { SlackService } from '../services/slack-service.js';
-import { GeminiService } from '../services/gemini-service.js';
+import { slackService } from '../services/slack-service.js';
+import { geminiService } from '../services/gemini-service.js';
 import { logger } from '../utils/logger.js';
+import path from 'path';
+import { initializeDatabase } from '../database/init.js';
 
 const MESSAGE_LIMIT = 1000;
 const TIME_WINDOW_DAYS = 90;
@@ -159,18 +163,21 @@ async function processChannel(channel, slackService, geminiService, dbQueries) {
   }
 }
 
-async function main() {
-  const dbQueries = new DatabaseQueries();
-  const slackService = new SlackService();
-  const geminiService = new GeminiService();
-
+async function analyzeChannels() {
   try {
-    await dbQueries.initialize();
+    // Initialize database
+    const dbPath = path.join(process.cwd(), 'data', 'analysis.sqlite');
+    await initializeDatabase(dbPath);
+    
+    // Create database instance and queries
+    const db = new Database(dbPath);
+    const dbQueries = new DatabaseQueries(db);
+
     await slackService.initialize();
     await geminiService.initialize();
 
     // Get all channels
-    const channels = await slackService.getChannels();
+    const channels = await slackService.listChannels();
     logger.info(`Found ${channels.length} channels to process`);
 
     // Process each channel
@@ -193,4 +200,4 @@ async function main() {
   }
 }
 
-main(); 
+analyzeChannels(); 
