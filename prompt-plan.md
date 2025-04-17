@@ -5,7 +5,7 @@
 - MCP SDK (@modelcontextprotocol/sdk)
 - SQLite3
 - Slack MCP Integration
-- Google Docs MCP Integration
+- Gemini Pro API
 
 ## Environment Setup
 ```json
@@ -14,111 +14,98 @@
     "@modelcontextprotocol/sdk": "latest",
     "@browsermcp/mcp": "latest",
     "sqlite3": "latest",
-    "dotenv": "latest"
+    "dotenv": "latest",
+    "@google/generative-ai": "latest"
   }
 }
 ```
 
 ## Objective
-Create a script to collect and analyze data from Slack and Google Docs to identify potential opportunities for custom development projects.
+Create a script to collect and analyze data from Slack channels to identify potential opportunities for custom development projects, focusing on recent (3-month) conversations and patterns that might not be obvious to participants.
 
 ## Data Collection Components
 
 ### 1. Slack Data Collection
 - Use Slack MCP server to:
-  - Iterate through all accessible channels in the workspace
-  - Pull last 1000 messages from each channel
-  - Store messages in memory for processing
-  - Include metadata like:
-    - Channel name
-    - Timestamp
-    - Author
-    - Message content
-    - Thread information (if applicable)
+  - Collect all accessible channels in the workspace
+  - For each relevant channel:
+    - Pull messages from last 3 months (or last 1000 messages, whichever is smaller)
+    - Include metadata like channel info and participant stats
+    - Store complete channel contexts for analysis
+  - Include context data:
+    - Channel metadata (name, type, topic, purpose)
+    - Message window information
+    - Participant statistics
+    - Activity metrics
 
-## Slack Data Collection Strategy
-
-### Channel Filtering Process
-1. Initial Channel Collection
-   - Collect all channels from Slack workspace
-   - Structure channel data as JSON:
-   ```json
-   {
-     "channels": [
-       {
-         "id": "string",
-         "name": "string",
-         "topic": "string",
-         "purpose": "string",
-         "member_count": "number"
-       }
-     ]
-   }
-   ```
-
-2. Gemini Pre-filtering
-   - Send channel list to Gemini for initial filtering
-   - Filtering criteria:
-     - EXCLUDE: Channels containing "off-topic"
-     - PRIORITIZE: Channels prefixed with "client-" or "eb-"
-   - Gemini prompt template:
-   ```text
-   Analyze this list of Slack channels and:
-   1. Remove any channels containing "off-topic" in their name
-   2. Prioritize channels that start with "client-" or "eb-"
-   3. Return a JSON object with two arrays:
-      - priority_channels: Channels matching priority criteria
-      - standard_channels: Other channels (excluding off-topic)
-   ```
-
-3. Message Collection Priority
-   - Process priority channels first
-   - Collect last 1000 messages from each channel
-   - Store with channel priority metadata
-
-### 2. Google Docs Data Collection
-- Use Google Docs MCP to:
-  - Retrieve last 1000 updated files
-  - Store document content and metadata in memory
-  - Include metadata like:
-    - Document title
-    - Last modified date
-    - Document content
-    - Document type
-    - Contributors
-
-## Data Structure
-
-### JSON Format Structure
+## Channel Context Structure
 ```json
 {
-  "slack_data": {
-    "channels": [
+  "channel_context": {
+    "channel_name": "string",
+    "channel_type": "priority|standard",
+    "topic": "string",
+    "purpose": "string",
+    "message_window": {
+      "start_date": "timestamp",
+      "end_date": "timestamp",
+      "message_count": "number",
+      "window_type": "message_limit|time_limit"
+    },
+    "messages": [
       {
-        "channel_name": "string",
-        "messages": [
-          {
-            "timestamp": "datetime",
-            "author": "string",
-            "content": "string",
-            "thread_id": "string",
-            "reactions": []
-          }
-        ]
-      }
-    ]
-  },
-  "gdocs_data": {
-    "documents": [
-      {
-        "title": "string",
-        "last_modified": "datetime",
+        "author": "string",
         "content": "string",
-        "doc_type": "string",
-        "contributors": [],
-        "url": "string"
+        "timestamp": "datetime",
+        "thread_id": "string?",
+        "reactions": ["string"],
+        "has_attachments": "boolean"
       }
-    ]
+    ],
+    "participants": {
+      "active_count": "number",
+      "key_contributors": ["string"]
+    },
+    "activity_metrics": {
+      "messages_per_day": "number",
+      "active_threads": "number",
+      "peak_activity_times": ["datetime"]
+    }
+  }
+}
+```
+
+## Opportunity Structure
+```json
+{
+  "opportunity": {
+    "id": "uuid",
+    "type": "feature|integration|automation|optimization",
+    "title": "string",
+    "description": "string",
+    "evidence": [
+      {
+        "message_id": "string",
+        "author": "string",
+        "timestamp": "datetime",
+        "content": "string",
+        "relevance_note": "string"
+      }
+    ],
+    "key_participants": ["string"],
+    "implicit_insights": "string",
+    "potential_solutions": ["string"],
+    "confidence_score": "float",
+    "impact_assessment": {
+      "scope": "team|department|organization",
+      "effort_estimate": "small|medium|large",
+      "potential_value": "low|medium|high"
+    },
+    "metadata": {
+      "channel_id": "string",
+      "detected_at": "datetime",
+      "last_updated": "datetime"
+    }
   }
 }
 ```
@@ -131,8 +118,13 @@ Create a script to collect and analyze data from Slack and Google Docs to identi
 ```sql
 CREATE TABLE channels (
     channel_id TEXT PRIMARY KEY,
-    channel_name TEXT,
-    last_processed TIMESTAMP
+    channel_name TEXT NOT NULL,
+    channel_type TEXT NOT NULL,
+    topic TEXT,
+    purpose TEXT,
+    member_count INTEGER,
+    last_processed TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
@@ -140,76 +132,89 @@ CREATE TABLE channels (
 ```sql
 CREATE TABLE messages (
     message_id TEXT PRIMARY KEY,
-    channel_id TEXT,
-    author TEXT,
+    channel_id TEXT NOT NULL,
+    author TEXT NOT NULL,
     content TEXT,
-    timestamp TIMESTAMP,
+    timestamp TIMESTAMP NOT NULL,
     thread_id TEXT,
+    has_attachments INTEGER DEFAULT 0,
+    reaction_count INTEGER DEFAULT 0,
+    reply_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
 );
 ```
 
-3. Documents Table
+3. Channel Contexts Table
 ```sql
-CREATE TABLE documents (
-    doc_id TEXT PRIMARY KEY,
-    title TEXT,
-    content TEXT,
-    last_modified TIMESTAMP,
-    doc_type TEXT,
-    url TEXT
+CREATE TABLE channel_contexts (
+    context_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    start_date TIMESTAMP NOT NULL,
+    end_date TIMESTAMP NOT NULL,
+    message_count INTEGER NOT NULL,
+    window_type TEXT NOT NULL,
+    context_data JSON NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
 );
 ```
 
-4. Analysis Results Table
+4. Opportunities Table
 ```sql
 CREATE TABLE opportunities (
-    opportunity_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_type TEXT,  -- 'slack' or 'gdocs'
-    source_id TEXT,    -- message_id or doc_id
-    opportunity_description TEXT,
-    confidence_score FLOAT,
-    identified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    opportunity_id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    implicit_insights TEXT,
+    confidence_score FLOAT NOT NULL,
+    scope TEXT NOT NULL,
+    effort_estimate TEXT NOT NULL,
+    potential_value TEXT NOT NULL,
+    status TEXT DEFAULT 'new',
+    detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_updated TIMESTAMP,
+    context_id TEXT NOT NULL,
+    FOREIGN KEY (context_id) REFERENCES channel_contexts(context_id)
+);
+```
+
+5. Opportunity Evidence Table
+```sql
+CREATE TABLE opportunity_evidence (
+    evidence_id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    relevance_note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (opportunity_id) REFERENCES opportunities(opportunity_id),
+    FOREIGN KEY (message_id) REFERENCES messages(message_id)
 );
 ```
 
 ## Processing Flow
 
 1. Data Collection
-   - Run Slack collection process
-   - Run Google Docs collection process
-   - Store all data in memory using the defined JSON structure
+   - Run Slack collection process with 3-month window
+   - Build complete channel contexts
+   - Store raw data and contexts in database
 
-2. Data Processing
-   - Format collected data for Gemini processing
-   - Create prompt template for identifying development opportunities
-   - Process data in appropriate batch sizes
-   - Extract and structure identified opportunities
+2. Opportunity Analysis
+   - Process each channel context through Gemini
+   - Store identified opportunities and evidence
+   - Track confidence scores and impact assessments
 
-3. Data Storage
-   - Initialize SQLite database with schema
-   - Store raw collected data
-   - Store processed results and identified opportunities
+3. Review Interface
+   - Present opportunities for human review
+   - Enable filtering by confidence/impact
+   - Allow feedback and status updates
 
 ## Implementation Notes
 
-- Use Node.js with MCP SDK for browser automation
-- Implement async/await for efficient API calls
-- Use MCP client setup pattern:
-  ```javascript
-  const transport = new StdioClientTransport({
-    command: "npx",
-    args: ["@browsermcp/mcp"]
-  });
-  const client = new Client({
-    name: "data-collection-client",
-    version: "1.0.0"
-  });
-  ```
-- Implement rate limiting for API requests
-- Add error handling and logging
-- Include progress tracking for long-running operations
-- Implement data validation before storage
-- Add capability to resume interrupted operations
-- Use environment variables for sensitive configuration
-- Implement connection retry logic for MCP services
+- Use Node.js with MCP SDK for Slack integration
+- Implement rate limiting and pagination
+- Use Gemini Pro for opportunity analysis
+- Store complete conversation contexts
+- Track processing history and results
+- Enable opportunity lifecycle management

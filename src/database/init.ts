@@ -1,111 +1,135 @@
-import sqlite3 from 'sqlite3';
-import { Database, open } from 'sqlite';
+import pkg from 'sqlite3';
+const { Database } = pkg;
+import { logger } from '../utils/logger.js';
 import path from 'path';
-import dotenv from 'dotenv';
-import { mkdir } from 'fs/promises';
-import { logger } from '../utils/logger';
 
-dotenv.config();
+export async function initializeDatabase(dbPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const db = new Database(dbPath, (err) => {
+      if (err) {
+        logger.error(`Failed to open database: ${err.message}`);
+        reject(err);
+        return;
+      }
 
-const dbPath: string = process.env.DB_PATH || './data/analysis.sqlite';
+      logger.info(`Initializing database at ${dbPath}`);
 
-async function ensureDbDirectory(): Promise<void> {
-  await mkdir(path.dirname(dbPath), { recursive: true });
-}
+      db.serialize(() => {
+        // Drop existing tables if they exist
+        db.run('DROP TABLE IF EXISTS opportunity_evidence');
+        db.run('DROP TABLE IF EXISTS opportunities');
+        db.run('DROP TABLE IF EXISTS channel_contexts');
+        db.run('DROP TABLE IF EXISTS messages');
+        db.run('DROP TABLE IF EXISTS channels');
 
-async function initializeDatabase(): Promise<Database> {
-  try {
-    await ensureDbDirectory();
-    
-    const db = await open({
-      filename: dbPath,
-      driver: sqlite3.Database
+        // Create channels table
+        db.run(`
+          CREATE TABLE IF NOT EXISTS channels (
+            channel_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            last_analyzed TEXT,
+            member_count INTEGER,
+            message_count INTEGER DEFAULT 0,
+            link_count INTEGER DEFAULT 0,
+            mention_count INTEGER DEFAULT 0,
+            metadata TEXT
+          )
+        `);
+
+        // Create messages table
+        db.run(`
+          CREATE TABLE IF NOT EXISTS messages (
+            message_id TEXT PRIMARY KEY,
+            channel_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            content TEXT,
+            timestamp TEXT NOT NULL,
+            thread_ts TEXT,
+            reply_count INTEGER DEFAULT 0,
+            link_count INTEGER DEFAULT 0,
+            mention_count INTEGER DEFAULT 0,
+            reaction_count INTEGER DEFAULT 0,
+            FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
+          )
+        `);
+
+        // Create channel_contexts table
+        db.run(`
+          CREATE TABLE IF NOT EXISTS channel_contexts (
+            context_id TEXT PRIMARY KEY,
+            channel_id TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            message_count INTEGER NOT NULL,
+            window_type TEXT NOT NULL,
+            context_data TEXT,
+            FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
+          )
+        `);
+
+        // Create opportunities table
+        db.run(`
+          CREATE TABLE IF NOT EXISTS opportunities (
+            opportunity_id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            implicit_insights TEXT,
+            key_participants TEXT,
+            potential_solutions TEXT,
+            confidence_score REAL NOT NULL,
+            scope TEXT NOT NULL,
+            effort_estimate TEXT NOT NULL,
+            potential_value TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            context_id TEXT NOT NULL,
+            detected_at TEXT NOT NULL,
+            last_updated TEXT NOT NULL,
+            FOREIGN KEY (context_id) REFERENCES channel_contexts(context_id)
+          )
+        `);
+
+        // Create opportunity_evidence table
+        db.run(`
+          CREATE TABLE IF NOT EXISTS opportunity_evidence (
+            evidence_id TEXT PRIMARY KEY,
+            opportunity_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            author TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            content TEXT NOT NULL,
+            relevance_note TEXT,
+            FOREIGN KEY (opportunity_id) REFERENCES opportunities(opportunity_id),
+            FOREIGN KEY (message_id) REFERENCES messages(message_id)
+          )
+        `);
+
+        // Verify tables were created
+        db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='opportunities'", (err) => {
+          if (err) {
+            logger.error(`Failed to verify database setup: ${err.message}`);
+            reject(err);
+            return;
+          }
+
+          // Create indexes for better query performance
+          db.serialize(() => {
+            db.run('CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON messages(channel_id)');
+            db.run('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)');
+            db.run('CREATE INDEX IF NOT EXISTS idx_channel_contexts_channel_id ON channel_contexts(channel_id)');
+            db.run('CREATE INDEX IF NOT EXISTS idx_opportunities_context_id ON opportunities(context_id)');
+            db.run('CREATE INDEX IF NOT EXISTS idx_opportunities_type ON opportunities(type)');
+            db.run('CREATE INDEX IF NOT EXISTS idx_opportunities_status ON opportunities(status)');
+            db.run('CREATE INDEX IF NOT EXISTS idx_opportunity_evidence_opportunity_id ON opportunity_evidence(opportunity_id)');
+            db.run('CREATE INDEX IF NOT EXISTS idx_opportunity_evidence_message_id ON opportunity_evidence(message_id)');
+
+            logger.info('Database schema created successfully');
+            resolve();
+          });
+        });
+      });
     });
-
-    // Enable foreign keys
-    await db.exec('PRAGMA foreign_keys = ON');
-
-    // Create channels table
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS channels (
-        channel_id TEXT PRIMARY KEY,
-        channel_name TEXT NOT NULL,
-        channel_type TEXT CHECK(channel_type IN ('priority', 'standard', 'off-topic')),
-        topic TEXT,
-        purpose TEXT,
-        member_count INTEGER,
-        last_processed TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_channels_type ON channels(channel_type);
-      CREATE INDEX IF NOT EXISTS idx_channels_name ON channels(channel_name);
-    `);
-
-    // Create messages table
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS messages (
-        message_id TEXT PRIMARY KEY,
-        channel_id TEXT NOT NULL,
-        author TEXT NOT NULL,
-        content TEXT,
-        timestamp TIMESTAMP NOT NULL,
-        thread_id TEXT,
-        has_attachments BOOLEAN DEFAULT FALSE,
-        reaction_count INTEGER DEFAULT 0,
-        reply_count INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (channel_id) REFERENCES channels(channel_id) ON DELETE CASCADE
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id);
-      CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
-      CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id);
-    `);
-
-    // Create documents table
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS documents (
-        doc_id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        content TEXT,
-        last_modified TIMESTAMP NOT NULL,
-        doc_type TEXT,
-        url TEXT,
-        author TEXT,
-        collaborator_count INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_documents_modified ON documents(last_modified);
-      CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(doc_type);
-    `);
-
-    // Create opportunities table
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS opportunities (
-        opportunity_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        source_type TEXT NOT NULL CHECK(source_type IN ('slack', 'gdocs')),
-        source_id TEXT NOT NULL,
-        opportunity_description TEXT NOT NULL,
-        confidence_score FLOAT CHECK(confidence_score BETWEEN 0 AND 1),
-        status TEXT DEFAULT 'new' CHECK(status IN ('new', 'reviewed', 'approved', 'rejected')),
-        identified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        reviewed_at TIMESTAMP,
-        notes TEXT
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_opportunities_source ON opportunities(source_type, source_id);
-      CREATE INDEX IF NOT EXISTS idx_opportunities_status ON opportunities(status);
-      CREATE INDEX IF NOT EXISTS idx_opportunities_confidence ON opportunities(confidence_score);
-    `);
-
-    logger.info('Database initialized successfully');
-    return db;
-  } catch (error) {
-    logger.error('Error initializing database:', error);
-    throw error;
-  }
-}
-
-export { initializeDatabase }; 
+  });
+} 

@@ -1,227 +1,248 @@
-import { Database } from 'sqlite';
-import { DatabaseChannel } from '../models/channel';
-import { DatabaseMessage } from '../models/message';
-import { initializeSchema } from './schema';
+import pkg from 'sqlite3';
+const { Database } = pkg;
+import { logger } from '../utils/logger.js';
+import { DatabaseChannel, DatabaseMessage, DatabaseOpportunity, DatabaseOpportunityEvidence } from '../types/database.js';
 
-interface Document {
-  id: string;
-  title: string;
-  content: string;
-  lastModified: Date;
-  type: string;
-  url: string;
-  author: string;
-  collaboratorCount: number;
-}
+export class DatabaseQueries {
+  private db: InstanceType<typeof Database>;
 
-interface Opportunity {
-  sourceType: 'slack' | 'gdocs';
-  sourceId: string;
-  description: string;
-  confidenceScore: number;
-  status?: 'new' | 'reviewed' | 'approved' | 'rejected';
-}
-
-interface DatabaseRecord {
-  channel_id: string;
-  channel_name: string;
-  channel_type: 'priority' | 'standard' | 'off-topic';
-  topic: string | null;
-  purpose: string | null;
-  member_count: number;
-  message_id: string;
-  author: string;
-  content: string;
-  timestamp: string;
-  thread_id: string | null;
-  has_attachments: number;
-  reaction_count: number;
-  reply_count: number;
-}
-
-class DatabaseQueries {
-  private db: Database | null = null;
-
-  constructor() {
-    this.db = null;
+  constructor(db: InstanceType<typeof Database>) {
+    this.db = db;
   }
 
-  async initialize(): Promise<void> {
-    if (this.db) {
-      throw new Error('Database already initialized');
-    }
-    this.db = await initializeSchema();
-  }
-
-  private checkConnection(): void {
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
-  }
-
-  // Channel Operations
-  async upsertChannel(channel: DatabaseChannel): Promise<void> {
-    this.checkConnection();
-    const { channel_id, channel_name, channel_type, topic, purpose, member_count } = channel;
-    await this.db!.run(`
-      INSERT INTO channels (channel_id, channel_name, channel_type, topic, purpose, member_count)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(channel_id) DO UPDATE SET
-        channel_name = excluded.channel_name,
-        channel_type = excluded.channel_type,
-        topic = excluded.topic,
-        purpose = excluded.purpose,
-        member_count = excluded.member_count
-    `, [channel_id, channel_name, channel_type, topic, purpose, member_count]);
-  }
-
+  // Channel queries
   async getChannelsByType(type: string): Promise<DatabaseChannel[]> {
-    this.checkConnection();
-    const channels = await this.db!.all<DatabaseChannel[]>('SELECT * FROM channels WHERE channel_type = ?', [type]);
-    return channels;
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM channels WHERE type = ?';
+      this.db.all(sql, [type], (err: Error | null, rows: any[]) => {
+        if (err) {
+          logger.error('Error getting channels by type:', err);
+          reject(err);
+        } else {
+          resolve(rows as DatabaseChannel[]);
+        }
+      });
+    });
   }
 
-  async updateChannelProcessedTime(channelId: string): Promise<void> {
-    this.checkConnection();
-    await this.db!.run(
-      'UPDATE channels SET last_processed = CURRENT_TIMESTAMP WHERE channel_id = ?',
-      [channelId]
-    );
+  async getChannelMessages(channelId: string): Promise<DatabaseMessage[]> {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM messages WHERE channel_id = ?';
+      this.db.all(sql, [channelId], (err: Error | null, rows: any[]) => {
+        if (err) {
+          logger.error('Error getting channel messages:', err);
+          reject(err);
+        } else {
+          resolve(rows as DatabaseMessage[]);
+        }
+      });
+    });
   }
 
-  // Message Operations
+  async upsertChannel(channel: DatabaseChannel): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT INTO channels (
+          channel_id, name, type, created_at, last_analyzed,
+          member_count, message_count, link_count, mention_count, metadata
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(channel_id) DO UPDATE SET
+          name = excluded.name,
+          type = excluded.type,
+          last_analyzed = excluded.last_analyzed,
+          member_count = excluded.member_count,
+          message_count = excluded.message_count,
+          link_count = excluded.link_count,
+          mention_count = excluded.mention_count,
+          metadata = excluded.metadata`;
+      
+      this.db.run(sql, [
+        channel.channel_id,
+        channel.name,
+        channel.type,
+        channel.created_at,
+        channel.last_analyzed,
+        channel.member_count,
+        channel.message_count,
+        channel.link_count,
+        channel.mention_count,
+        channel.metadata
+      ], (err: Error | null) => {
+        if (err) {
+          logger.error('Error upserting channel:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
   async batchInsertMessages(messages: DatabaseMessage[]): Promise<void> {
-    this.checkConnection();
-    const stmt = await this.db!.prepare(`
-      INSERT INTO messages (
-        message_id, channel_id, author, content, timestamp,
-        thread_id, has_attachments, reaction_count, reply_count
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(message_id) DO UPDATE SET
-        content = excluded.content,
-        reaction_count = excluded.reaction_count,
-        reply_count = excluded.reply_count
-    `);
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT INTO messages (
+          message_id, channel_id, user_id, content, timestamp,
+          thread_ts, reply_count, link_count, mention_count, reaction_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(message_id) DO UPDATE SET
+          content = excluded.content,
+          thread_ts = excluded.thread_ts,
+          reply_count = excluded.reply_count,
+          link_count = excluded.link_count,
+          mention_count = excluded.mention_count,
+          reaction_count = excluded.reaction_count`;
 
-    try {
-      for (const msg of messages) {
-        await stmt.run([
-          msg.message_id,
-          msg.channel_id,
-          msg.author,
-          msg.content,
-          msg.timestamp,
-          msg.thread_id,
-          msg.has_attachments,
-          msg.reaction_count,
-          msg.reply_count
-        ]);
+      const stmt = this.db.prepare(sql);
+      
+      try {
+        this.db.serialize(() => {
+          this.db.run('BEGIN TRANSACTION');
+          
+          for (const msg of messages) {
+            stmt.run([
+              msg.message_id,
+              msg.channel_id,
+              msg.user_id,
+              msg.content,
+              msg.timestamp,
+              msg.thread_ts,
+              msg.reply_count,
+              msg.link_count,
+              msg.mention_count,
+              msg.reaction_count
+            ], (err: Error | null) => {
+              if (err) {
+                logger.error('Error in batch message insert:', err);
+                throw err;
+              }
+            });
+          }
+          
+          this.db.run('COMMIT', (err: Error | null) => {
+            if (err) {
+              logger.error('Error committing transaction:', err);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      } catch (err) {
+        this.db.run('ROLLBACK');
+        reject(err);
+      } finally {
+        stmt.finalize();
       }
-    } finally {
-      await stmt.finalize();
-    }
+    });
   }
 
-  async getChannelMessages(channelId: string, limit = 1000): Promise<DatabaseMessage[]> {
-    this.checkConnection();
-    const messages = await this.db!.all<DatabaseMessage[]>(
-      'SELECT * FROM messages WHERE channel_id = ? ORDER BY timestamp DESC LIMIT ?',
-      [channelId, limit]
-    );
-    return messages;
+  // Opportunity queries
+  async createOpportunity(opportunity: DatabaseOpportunity): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT INTO opportunities (
+          opportunity_id, type, title, description, implicit_insights,
+          key_participants, potential_solutions, confidence_score,
+          scope, effort_estimate, potential_value, status,
+          context_id, detected_at, last_updated
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      
+      this.db.run(sql, [
+        opportunity.opportunity_id,
+        opportunity.type,
+        opportunity.title,
+        opportunity.description,
+        opportunity.implicit_insights,
+        opportunity.key_participants,
+        opportunity.potential_solutions,
+        opportunity.confidence_score,
+        opportunity.scope,
+        opportunity.effort_estimate,
+        opportunity.potential_value,
+        opportunity.status,
+        opportunity.context_id,
+        opportunity.detected_at,
+        opportunity.last_updated
+      ], function(err) {
+        if (err) {
+          logger.error('Error creating opportunity:', err);
+          reject(err);
+        } else {
+          resolve(opportunity.opportunity_id);
+        }
+      });
+    });
   }
 
-  // Document Operations
-  async upsertDocument(doc: Document): Promise<void> {
-    this.checkConnection();
-    await this.db!.run(`
-      INSERT INTO documents (
-        doc_id, title, content, last_modified,
-        doc_type, url, author, collaborator_count
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(doc_id) DO UPDATE SET
-        title = excluded.title,
-        content = excluded.content,
-        last_modified = excluded.last_modified,
-        doc_type = excluded.doc_type,
-        url = excluded.url,
-        author = excluded.author,
-        collaborator_count = excluded.collaborator_count
-    `, [
-      doc.id, doc.title, doc.content, doc.lastModified,
-      doc.type, doc.url, doc.author, doc.collaboratorCount
-    ]);
+  async addOpportunityEvidence(evidence: DatabaseOpportunityEvidence): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT INTO opportunity_evidence (
+          evidence_id, opportunity_id, message_id, author,
+          timestamp, content, relevance_note
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+      
+      this.db.run(sql, [
+        evidence.evidence_id,
+        evidence.opportunity_id,
+        evidence.message_id,
+        evidence.author,
+        evidence.timestamp,
+        evidence.content,
+        evidence.relevance_note
+      ], function(err) {
+        if (err) {
+          logger.error('Error adding opportunity evidence:', err);
+          reject(err);
+        } else {
+          resolve(evidence.evidence_id);
+        }
+      });
+    });
   }
 
-  async getRecentDocuments(limit = 1000): Promise<Document[]> {
-    this.checkConnection();
-    const records = await this.db!.all<Document[]>(
-      'SELECT * FROM documents ORDER BY last_modified DESC LIMIT ?',
-      [limit]
-    );
-    return records;
+  async getOpportunitiesByStatus(status: string): Promise<DatabaseOpportunity[]> {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM opportunities WHERE status = ? ORDER BY detected_at DESC';
+      this.db.all(sql, [status], (err, rows) => {
+        if (err) {
+          logger.error('Error getting opportunities by status:', err);
+          reject(err);
+        } else {
+          resolve(rows as DatabaseOpportunity[]);
+        }
+      });
+    });
   }
 
-  // Opportunity Operations
-  async createOpportunity(opportunity: Opportunity): Promise<void> {
-    this.checkConnection();
-    await this.db!.run(`
-      INSERT INTO opportunities (
-        source_type, source_id, opportunity_description,
-        confidence_score, status
-      )
-      VALUES (?, ?, ?, ?, ?)
-    `, [
-      opportunity.sourceType,
-      opportunity.sourceId,
-      opportunity.description,
-      opportunity.confidenceScore,
-      opportunity.status || 'new'
-    ]);
+  async getOpportunityEvidence(opportunityId: string): Promise<DatabaseOpportunityEvidence[]> {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM opportunity_evidence WHERE opportunity_id = ? ORDER BY timestamp ASC';
+      this.db.all(sql, [opportunityId], (err, rows) => {
+        if (err) {
+          logger.error('Error getting opportunity evidence:', err);
+          reject(err);
+        } else {
+          resolve(rows as DatabaseOpportunityEvidence[]);
+        }
+      });
+    });
   }
 
-  async updateOpportunityStatus(opportunityId: number, status: Opportunity['status'], notes?: string): Promise<void> {
-    this.checkConnection();
-    await this.db!.run(`
-      UPDATE opportunities
-      SET status = ?, notes = ?, reviewed_at = CURRENT_TIMESTAMP
-      WHERE opportunity_id = ?
-    `, [status, notes, opportunityId]);
+  async updateOpportunityStatus(opportunityId: string, status: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        'UPDATE opportunities SET status = ?, last_updated = ? WHERE opportunity_id = ?',
+        [status, new Date().toISOString(), opportunityId],
+        (err) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        }
+      );
+    });
   }
-
-  async getOpportunitiesByStatus(status: Opportunity['status'], limit = 100): Promise<Opportunity[]> {
-    this.checkConnection();
-    const records = await this.db!.all<Opportunity[]>(
-      'SELECT * FROM opportunities WHERE status = ? ORDER BY confidence_score DESC LIMIT ?',
-      [status, limit]
-    );
-    return records;
-  }
-
-  // Utility Operations
-  async beginTransaction(): Promise<void> {
-    this.checkConnection();
-    await this.db!.run('BEGIN TRANSACTION');
-  }
-
-  async commitTransaction(): Promise<void> {
-    this.checkConnection();
-    await this.db!.run('COMMIT');
-  }
-
-  async rollbackTransaction(): Promise<void> {
-    this.checkConnection();
-    await this.db!.run('ROLLBACK');
-  }
-
-  async close(): Promise<void> {
-    if (this.db) {
-      await this.db.close();
-      this.db = null;
-    }
-  }
-}
-
-export const dbQueries = new DatabaseQueries(); 
+} 

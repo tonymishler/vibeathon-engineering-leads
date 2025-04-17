@@ -1,102 +1,63 @@
-interface MessageConstructorParams {
+import { DatabaseMessage } from '../types/database.js';
+
+export interface MessageConstructorParams {
   id: string;
   channelId: string;
-  author: string;
+  userId: string;
   content: string;
-  timestamp: Date | string | number;
-  threadId?: string | null;
-  hasAttachments?: boolean;
-  reactionCount?: number;
+  threadTs?: string | null;
   replyCount?: number;
-}
-
-export interface DatabaseMessage {
-  message_id: string;
-  channel_id: string;
-  author: string;
-  content: string;
-  timestamp: string;
-  thread_id: string | null;
-  has_attachments: number;
-  reaction_count: number;
-  reply_count: number;
-  created_at?: Date;
-}
-
-interface SlackMessage {
-  ts: string;
-  user: string;
-  text: string;
-  thread_ts?: string;
-  files?: Array<any>;
-  reactions?: Array<any>;
-  reply_count?: number;
+  reactionCount?: number;
+  linkCount?: number;
+  mentionCount?: number;
+  timestamp?: number;
 }
 
 export class Message {
   readonly id: string;
   readonly channelId: string;
-  readonly author: string;
+  readonly userId: string;
   readonly content: string;
-  readonly timestamp: Date;
-  readonly threadId: string | null;
-  readonly hasAttachments: boolean;
-  readonly reactionCount: number;
+  readonly threadTs: string | null;
   readonly replyCount: number;
+  readonly reactionCount: number;
+  readonly linkCount: number;
+  readonly mentionCount: number;
+  readonly timestamp: number;
 
-  constructor({
-    id,
-    channelId,
-    author,
-    content,
-    timestamp,
-    threadId = null,
-    hasAttachments = false,
-    reactionCount = 0,
-    replyCount = 0
-  }: MessageConstructorParams) {
-    this.id = id;
-    this.channelId = channelId;
-    this.author = author;
-    this.content = content;
-    this.timestamp = this.validateTimestamp(timestamp);
-    this.threadId = threadId;
-    this.hasAttachments = hasAttachments;
-    this.reactionCount = reactionCount;
-    this.replyCount = replyCount;
+  constructor(params: MessageConstructorParams) {
+    this.id = params.id;
+    this.channelId = params.channelId;
+    this.userId = params.userId;
+    this.content = params.content;
+    this.threadTs = params.threadTs || null;
+    this.replyCount = params.replyCount || 0;
+    this.reactionCount = params.reactionCount || 0;
+    this.linkCount = params.linkCount || 0;
+    this.mentionCount = params.mentionCount || 0;
+    this.timestamp = params.timestamp || Date.now();
   }
 
-  private validateTimestamp(timestamp: Date | string | number): Date {
-    if (timestamp instanceof Date) {
-      return timestamp;
-    }
-    // Handle Slack's timestamp format (Unix timestamp with milliseconds)
-    if (typeof timestamp === 'string' && timestamp.includes('.')) {
-      return new Date(parseFloat(timestamp) * 1000);
-    }
-    // Handle Unix timestamp in seconds
-    if (typeof timestamp === 'number') {
-      return new Date(timestamp * 1000);
-    }
-    // Try to parse as ISO string
-    const date = new Date(timestamp);
-    if (isNaN(date.getTime())) {
-      throw new Error(`Invalid timestamp format: ${timestamp}`);
-    }
-    return date;
+  isThreaded(): boolean {
+    return this.threadTs !== null;
+  }
+
+  hasContent(): boolean {
+    return this.content.trim().length > 0;
   }
 
   toDatabase(): DatabaseMessage {
     return {
       message_id: this.id,
       channel_id: this.channelId,
-      author: this.author,
+      user_id: this.userId,
       content: this.content,
-      timestamp: this.timestamp.toISOString(),
-      thread_id: this.threadId,
-      has_attachments: this.hasAttachments ? 1 : 0,
+      thread_ts: this.threadTs,
+      reply_count: this.replyCount,
       reaction_count: this.reactionCount,
-      reply_count: this.replyCount
+      link_count: this.linkCount,
+      mention_count: this.mentionCount,
+      timestamp: this.timestamp.toString()
     };
   }
 
@@ -104,35 +65,14 @@ export class Message {
     return new Message({
       id: record.message_id,
       channelId: record.channel_id,
-      author: record.author,
+      userId: record.user_id,
       content: record.content,
-      timestamp: record.timestamp,
-      threadId: record.thread_id,
-      hasAttachments: record.has_attachments === 1,
+      threadTs: record.thread_ts,
+      replyCount: record.reply_count,
       reactionCount: record.reaction_count,
-      replyCount: record.reply_count
+      linkCount: record.link_count,
+      mentionCount: record.mention_count,
+      timestamp: parseInt(record.timestamp, 10)
     });
-  }
-
-  static fromSlackAPI(slackMessage: SlackMessage, channelId: string): Message {
-    return new Message({
-      id: slackMessage.ts,
-      channelId: channelId,
-      author: slackMessage.user,
-      content: slackMessage.text,
-      timestamp: slackMessage.ts,
-      threadId: slackMessage.thread_ts || null,
-      hasAttachments: (slackMessage.files?.length || 0) > 0,
-      reactionCount: (slackMessage.reactions?.length || 0),
-      replyCount: slackMessage.reply_count || 0
-    });
-  }
-
-  isThreaded(): boolean {
-    return this.threadId !== null;
-  }
-
-  hasContent(): boolean {
-    return Boolean(this.content?.trim() || this.hasAttachments);
   }
 } 

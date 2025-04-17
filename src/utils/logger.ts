@@ -19,29 +19,15 @@ const colors: Colors = {
 };
 
 interface Logger {
-  info(message: string, ...args: any[]): void;
-  success(message: string, ...args: any[]): void;
-  warn(message: string, ...args: any[]): void;
-  error(message: string, ...args: any[]): void;
-  debug(message: string, ...args: any[]): void;
+  info: (...args: any[]) => void;
+  warn: (...args: any[]) => void;
+  error: (...args: any[]) => void;
+  debug: (...args: any[]) => void;
 }
 
 export const logger: Logger = {
-  info: (message: string, ...args: any[]): void => {
-    console.log(`${colors.blue}ℹ${colors.reset} ${message}`, ...args);
-  },
-  success: (message: string, ...args: any[]): void => {
-    console.log(`${colors.green}✓${colors.reset} ${message}`, ...args);
-  },
-  warn: (message: string, ...args: any[]): void => {
-    console.log(`${colors.yellow}⚠${colors.reset} ${message}`, ...args);
-  },
-  error: (message: string, ...args: any[]): void => {
-    console.error(`${colors.red}✗${colors.reset} ${message}`, ...args);
-  },
-  debug: (message: string, ...args: any[]): void => {
-    if (process.env.DEBUG) {
-      console.log(`${colors.magenta}🔍${colors.reset} ${message}`, ...args);
-    }
-  }
+  info: (...args: any[]) => console.log('[INFO]', ...args),
+  warn: (...args: any[]) => console.warn('[WARN]', ...args),
+  error: (...args: any[]) => console.error('[ERROR]', ...args),
+  debug: (...args: any[]) => console.debug('[DEBUG]', ...args)
 }; 

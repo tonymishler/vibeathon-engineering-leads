@@ -1,33 +1,15 @@
-import { dbQueries } from '../database/queries';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import dotenv from 'dotenv';
-import { logger } from '../utils/logger';
+import { initializeDatabase } from '../database/init.js';
+import { logger } from '../utils/logger.js';
 
-// Get the directory name of the current module
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Load environment variables
-dotenv.config({
-  path: join(__dirname, '../../.env')
-});
-
-async function initializeDatabase(): Promise<void> {
+async function main() {
   try {
-    logger.info('Initializing database...');
-    await dbQueries.initialize();
-    logger.info('Database initialized successfully!');
-    
-    // Close the database connection
-    await dbQueries.close();
-    logger.info('Database connection closed.');
-    
-    process.exit(0);
+    const db = await initializeDatabase();
+    logger.info('Database initialized successfully');
+    await db.close();
   } catch (error) {
-    logger.error('Error initializing database:', error);
+    logger.error('Failed to initialize database:', error);
     process.exit(1);
   }
 }
 
-// Run the initialization
-initializeDatabase(); 
+main(); 

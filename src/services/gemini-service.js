@@ -90,28 +90,76 @@ ${JSON.stringify(channels, null, 2)}
     await this.initialize();
 
     const prompt = `
-Analyze these Slack messages from the channel "${channelInfo.name}" to identify potential engineering or development opportunities.
-Look for:
+Analyze these Slack messages from the channel "${channelInfo.name}" to identify potential engineering opportunities.
+Focus on:
 1. Client requests or needs that could benefit from custom development
 2. Recurring manual processes that could be automated
 3. Integration opportunities between different systems
 4. Performance or scaling challenges
 5. User experience issues that could be improved
+6. Technical debt or maintenance needs
+7. Cross-team collaboration bottlenecks
 
 For each opportunity identified, provide:
-1. A clear description of the opportunity
-2. The type of solution that could be implemented
-3. A confidence score (0-1) based on how clear and actionable the opportunity is
+{
+  "type": "feature|integration|automation|optimization",
+  "title": "Brief descriptive title",
+  "description": "Detailed description of the opportunity",
+  "evidence": [{
+    "message_id": "ID of the relevant message",
+    "author": "message author",
+    "content": "relevant message content",
+    "relevance_note": "why this message supports the opportunity"
+  }],
+  "implicit_insights": "patterns or insights not directly stated",
+  "confidence_score": 0.0-1.0,
+  "impact_assessment": {
+    "scope": "team|department|organization",
+    "effort_estimate": "small|medium|large",
+    "potential_value": "low|medium|high"
+  }
+}
 
-Input messages:
-${JSON.stringify(messages, null, 2)}
+Channel Context:
+${JSON.stringify(channelInfo, null, 2)}
+
+Messages to Analyze:
+${JSON.stringify(messages.slice(0, 50), null, 2)}
 `;
 
-    // TODO: Replace with actual Gemini API call
-    // For now, return a placeholder response
-    return {
-      opportunities: []
-    };
+    try {
+      // TODO: Replace with actual Gemini API call once integrated
+      const response = await mcpClient.callTool('gemini_generate', {
+        prompt,
+        temperature: 0.7,
+        max_tokens: 2048
+      });
+
+      if (!response?.content?.[0]?.text) {
+        throw new Error('Invalid response from Gemini API');
+      }
+
+      const analysis = JSON.parse(response.content[0].text);
+      
+      // Validate and transform opportunities
+      const opportunities = Array.isArray(analysis.opportunities) 
+        ? analysis.opportunities.map(opp => ({
+            ...opp,
+            confidence_score: parseFloat(opp.confidence_score) || 0.5,
+            evidence: Array.isArray(opp.evidence) ? opp.evidence : [],
+            impact_assessment: {
+              scope: opp.impact_assessment?.scope || 'team',
+              effort_estimate: opp.impact_assessment?.effort_estimate || 'medium',
+              potential_value: opp.impact_assessment?.potential_value || 'medium'
+            }
+          }))
+        : [];
+
+      return { opportunities };
+    } catch (error) {
+      logger.error('Failed to analyze channel content:', error);
+      return { opportunities: [] };
+    }
   }
 
   async disconnect() {

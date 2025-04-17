@@ -62,6 +62,7 @@
     "prettier": "latest",
     "ts-node": "latest",
     "ts-node-dev": "latest",
+    "tsx": "^4.19.3",
     "typescript": "latest"
   }
 }

@@ -22,10 +22,8 @@ class MCPClient {
   async connect(serverType) {
     try {
       // Create transport based on server type
-      this.transport = new StdioClientTransport({
-        command: "npx",
-        args: this.getServerArgs(serverType)
-      });
+      const transportConfig = this.getTransportConfig(serverType);
+      this.transport = new StdioClientTransport(transportConfig);
 
       // Create client
       this.client = new Client({
@@ -43,12 +41,31 @@ class MCPClient {
     }
   }
 
-  getServerArgs(serverType) {
+  getTransportConfig(serverType) {
+    const baseConfig = {
+      command: "/opt/homebrew/bin/node",
+      env: {
+        NODE_ENV: "development",
+        PATH: process.env.PATH
+      }
+    };
+
     switch (serverType) {
       case 'slack':
-        return ["-y", "@modelcontextprotocol/server-slack"];
+        return {
+          ...baseConfig,
+          args: ["./node_modules/@modelcontextprotocol/server-slack/dist/index.js"],
+          env: {
+            ...baseConfig.env,
+            SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN,
+            SLACK_TEAM_ID: process.env.SLACK_TEAM_ID
+          }
+        };
       case 'browser':
-        return ["@browsermcp/mcp"];
+        return {
+          ...baseConfig,
+          args: ["./node_modules/@browsermcp/mcp/dist/index.js"]
+        };
       default:
         throw new Error(`Unsupported MCP server type: ${serverType}`);
     }
@@ -61,9 +78,6 @@ class MCPClient {
       // Wait for connection to stabilize
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Test connection
-      await this.testConnection();
-      
       this.isConnected = true;
       console.log('Successfully connected to MCP server');
     } catch (error) {
@@ -73,19 +87,6 @@ class MCPClient {
         return this.connectWithRetry(attempt + 1);
       }
       throw new Error(`Failed to connect after ${this.options.maxRetries} attempts: ${error.message}`);
-    }
-  }
-
-  async testConnection() {
-    // Implementation will vary based on server type
-    // For now, we'll just check if we can call a basic tool
-    const result = await this.client.callTool({
-      name: "browser_snapshot",
-      arguments: {}
-    });
-
-    if (result.isError) {
-      throw new Error(`Connection test failed: ${JSON.stringify(result)}`);
     }
   }
 
