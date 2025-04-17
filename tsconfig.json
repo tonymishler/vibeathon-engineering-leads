@@ -12,7 +12,9 @@
     "paths": {
       "*": ["src/*"]
     },
-    "outDir": "dist"
+    "outDir": "dist",
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
   "ts-node": {
     "esm": true,

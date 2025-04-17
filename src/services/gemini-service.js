@@ -111,6 +111,9 @@ ${JSON.stringify(channels, null, 2)}
   async analyzeChannelContent(messages, channelInfo) {
     await this.initialize();
 
+    // Limit the number of messages to analyze to avoid hitting response size limits
+    const messagesToAnalyze = messages.slice(0, 20); // Reduced from 50 to 20
+
     const prompt = `You are a JSON-only response API. You must respond with ONLY valid JSON, no markdown formatting, no code blocks, no natural language. The response must be an object with an "opportunities" array containing opportunity objects.
 
 Task: Analyze these Slack messages from the channel "${channelInfo.name}" to identify potential engineering opportunities.
@@ -156,7 +159,7 @@ Channel Context:
 ${JSON.stringify(channelInfo, null, 2)}
 
 Messages to Analyze:
-${JSON.stringify(messages.slice(0, 50), null, 2)}`;
+${JSON.stringify(messagesToAnalyze, null, 2)}`;
 
     try {
       const result = await this.model.generateContent({
@@ -176,6 +179,11 @@ ${JSON.stringify(messages.slice(0, 50), null, 2)}`;
       if (text.startsWith('```')) {
         text = text.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
       }
+      
+      // Clean up any truncated JSON
+      text = text.replace(/,\s*$/, ''); // Remove trailing comma
+      text = text.replace(/,\s*"evidence":\s*\[\s*$/, ''); // Remove truncated evidence array
+      text = text.replace(/,\s*"implicit_insights":\s*"[^"]*$/, ''); // Remove truncated string
       
       try {
         const analysis = JSON.parse(text);
@@ -201,8 +209,7 @@ ${JSON.stringify(messages.slice(0, 50), null, 2)}`;
         return { opportunities: [] };
       }
     } catch (error) {
-      const logError = logger?.error || console.error;
-      logError('Failed to analyze channel content:', error);
+      logger.error('Failed to analyze channel content:', error);
       return { opportunities: [] };
     }
   }
