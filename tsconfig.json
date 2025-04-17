@@ -10,7 +10,8 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "*": ["src/*"]
+      "@/*": ["src/*"],
+      "@web/*": ["src/web/*"]
     },
     "outDir": "dist",
     "allowImportingTsExtensions": true,
