@@ -116,4 +116,4 @@ function testChannelFiltering(): void {
 }
 
 // Run the unit tests
-testChannelFiltering(); 
+export default testChannelFiltering; 

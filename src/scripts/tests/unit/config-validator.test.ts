@@ -93,4 +93,4 @@ function testConfigValidator(): void {
 }
 
 // Run the tests
-testConfigValidator(); 
+export default testConfigValidator; 

@@ -97,4 +97,4 @@ async function testRateLimiter(): Promise<void> {
 }
 
 // Run the tests
-testRateLimiter(); 
+export default testRateLimiter; 
