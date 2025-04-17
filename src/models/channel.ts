@@ -9,7 +9,7 @@ interface ChannelConstructorParams {
   memberCount?: number;
 }
 
-interface DatabaseChannel {
+export interface DatabaseChannel {
   channel_id: string;
   channel_name: string;
   channel_type: ChannelType;

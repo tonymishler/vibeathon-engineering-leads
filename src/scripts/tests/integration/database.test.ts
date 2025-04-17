@@ -1,8 +1,8 @@
 import assert from 'assert';
-import { dbQueries } from '../../../database/queries.js';
-import { Channel } from '../../../models/channel.js';
-import { Message } from '../../../models/message.js';
-import { logger } from '../../../utils/logger.js';
+import { dbQueries } from '../../../database/queries';
+import { Channel } from '../../../models/channel';
+import { Message } from '../../../models/message';
+import { logger } from '../../../utils/logger';
 
 interface TestResults {
   channelOperations: boolean;
@@ -34,9 +34,14 @@ async function testDatabaseIntegration(): Promise<void> {
       memberCount: 1
     });
 
-    await dbQueries.upsertChannel(testChannel);
+    const dbChannel = testChannel.toDatabase();
+
+    await dbQueries.upsertChannel(dbChannel);
     const channels = await dbQueries.getChannelsByType('standard');
-    assert(channels.some(c => c.id === testChannel.id));
+    const foundChannel = channels.find(c => c.channel_id === testChannel.id);
+    assert(foundChannel);
+    const retrievedChannel = Channel.fromDatabase(foundChannel);
+    assert.strictEqual(retrievedChannel.id, testChannel.id);
     results.channelOperations = true;
     logger.info('✓ Channel operations successful');
 
@@ -53,10 +58,13 @@ async function testDatabaseIntegration(): Promise<void> {
       replyCount: 0
     });
 
-    await dbQueries.batchInsertMessages([testMessage]);
+    const dbMessage = testMessage.toDatabase();
+
+    await dbQueries.batchInsertMessages([dbMessage]);
     const messages = await dbQueries.getChannelMessages(testChannel.id, 1);
     assert.strictEqual(messages.length, 1);
-    assert.strictEqual(messages[0].id, testMessage.id);
+    const retrievedMessage = Message.fromDatabase(messages[0]);
+    assert.strictEqual(retrievedMessage.id, testMessage.id);
     results.messageOperations = true;
     logger.info('✓ Message operations successful');
 
@@ -74,26 +82,28 @@ async function testDatabaseIntegration(): Promise<void> {
         channelId: 'INVALID_CHANNEL',  // This should fail due to foreign key constraint
         author: 'test-user',
         content: 'Test message',
-        timestamp: new Date()
+        timestamp: new Date(),
+        threadId: null,
+        hasAttachments: false,
+        reactionCount: 0,
+        replyCount: 0
       });
 
-      try {
-        await dbQueries.batchInsertMessages([invalidMessage]);
-      } catch (error) {
-        // Expected error due to foreign key constraint
-        if (isInTransaction) {
-          await dbQueries.rollbackTransaction();
-          isInTransaction = false;
-        }
-        results.transactionHandling = true;
-        logger.info('✓ Transaction handling successful');
-      }
+      const invalidDbMessage = invalidMessage.toDatabase();
+
+      // This should throw due to foreign key constraint
+      await dbQueries.batchInsertMessages([invalidDbMessage]);
+      
+      // If we get here, the test failed
+      throw new Error('Expected foreign key constraint error');
     } catch (error) {
+      // Expected error due to foreign key constraint
       if (isInTransaction) {
         await dbQueries.rollbackTransaction();
         isInTransaction = false;
       }
-      throw error;
+      results.transactionHandling = true;
+      logger.info('✓ Transaction handling successful');
     }
 
   } catch (error) {
@@ -128,3 +138,9 @@ async function testDatabaseIntegration(): Promise<void> {
 }
 
 export default testDatabaseIntegration; 
+
+// Run the test
+testDatabaseIntegration().catch(error => {
+  console.error('Test failed:', error);
+  process.exit(1);
+}); 

@@ -1,7 +1,7 @@
 import { Database } from 'sqlite';
-import { initializeDatabase } from '../database/init';
-import { Channel } from '../models/channel';
-import { Message } from '../models/message';
+import { DatabaseChannel } from '../models/channel';
+import { DatabaseMessage } from '../models/message';
+import { initializeSchema } from './schema';
 
 interface Document {
   id: string;
@@ -47,7 +47,10 @@ class DatabaseQueries {
   }
 
   async initialize(): Promise<void> {
-    this.db = await initializeDatabase();
+    if (this.db) {
+      throw new Error('Database already initialized');
+    }
+    this.db = await initializeSchema();
   }
 
   private checkConnection(): void {
@@ -57,9 +60,9 @@ class DatabaseQueries {
   }
 
   // Channel Operations
-  async upsertChannel(channel: Channel): Promise<void> {
+  async upsertChannel(channel: DatabaseChannel): Promise<void> {
     this.checkConnection();
-    const { id, name, type, topic, purpose, memberCount } = channel;
+    const { channel_id, channel_name, channel_type, topic, purpose, member_count } = channel;
     await this.db!.run(`
       INSERT INTO channels (channel_id, channel_name, channel_type, topic, purpose, member_count)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -69,13 +72,13 @@ class DatabaseQueries {
         topic = excluded.topic,
         purpose = excluded.purpose,
         member_count = excluded.member_count
-    `, [id, name, type, topic, purpose, memberCount]);
+    `, [channel_id, channel_name, channel_type, topic, purpose, member_count]);
   }
 
-  async getChannelsByType(type: string): Promise<Channel[]> {
+  async getChannelsByType(type: string): Promise<DatabaseChannel[]> {
     this.checkConnection();
-    const records = await this.db!.all<DatabaseRecord[]>('SELECT * FROM channels WHERE channel_type = ?', [type]);
-    return records.map((record: DatabaseRecord) => Channel.fromDatabase(record));
+    const channels = await this.db!.all<DatabaseChannel[]>('SELECT * FROM channels WHERE channel_type = ?', [type]);
+    return channels;
   }
 
   async updateChannelProcessedTime(channelId: string): Promise<void> {
@@ -87,7 +90,7 @@ class DatabaseQueries {
   }
 
   // Message Operations
-  async batchInsertMessages(messages: Message[]): Promise<void> {
+  async batchInsertMessages(messages: DatabaseMessage[]): Promise<void> {
     this.checkConnection();
     const stmt = await this.db!.prepare(`
       INSERT INTO messages (
@@ -104,15 +107,15 @@ class DatabaseQueries {
     try {
       for (const msg of messages) {
         await stmt.run([
-          msg.id,
-          msg.channelId,
+          msg.message_id,
+          msg.channel_id,
           msg.author,
           msg.content,
           msg.timestamp,
-          msg.threadId,
-          msg.hasAttachments,
-          msg.reactionCount,
-          msg.replyCount
+          msg.thread_id,
+          msg.has_attachments,
+          msg.reaction_count,
+          msg.reply_count
         ]);
       }
     } finally {
@@ -120,13 +123,13 @@ class DatabaseQueries {
     }
   }
 
-  async getChannelMessages(channelId: string, limit = 1000): Promise<Message[]> {
+  async getChannelMessages(channelId: string, limit = 1000): Promise<DatabaseMessage[]> {
     this.checkConnection();
-    const records = await this.db!.all<DatabaseRecord[]>(
+    const messages = await this.db!.all<DatabaseMessage[]>(
       'SELECT * FROM messages WHERE channel_id = ? ORDER BY timestamp DESC LIMIT ?',
       [channelId, limit]
     );
-    return records.map((record: DatabaseRecord) => Message.fromDatabase(record));
+    return messages;
   }
 
   // Document Operations

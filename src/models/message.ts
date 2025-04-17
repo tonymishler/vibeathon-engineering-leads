@@ -10,7 +10,7 @@ interface MessageConstructorParams {
   replyCount?: number;
 }
 
-interface DatabaseMessage {
+export interface DatabaseMessage {
   message_id: string;
   channel_id: string;
   author: string;
@@ -20,6 +20,7 @@ interface DatabaseMessage {
   has_attachments: number;
   reaction_count: number;
   reply_count: number;
+  created_at?: Date;
 }
 
 interface SlackMessage {
