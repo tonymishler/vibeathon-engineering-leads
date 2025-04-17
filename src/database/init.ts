@@ -2,8 +2,9 @@ import pkg from 'sqlite3';
 const { Database } = pkg;
 import { logger } from '../utils/logger.js';
 import path from 'path';
+import { DatabaseQueries } from './queries.js';
 
-export async function initializeDatabase(dbPath: string): Promise<void> {
+export async function initializeDatabase(dbPath: string): Promise<DatabaseQueries> {
   return new Promise((resolve, reject) => {
     const db = new Database(dbPath, (err) => {
       if (err) {
@@ -126,7 +127,7 @@ export async function initializeDatabase(dbPath: string): Promise<void> {
             db.run('CREATE INDEX IF NOT EXISTS idx_opportunity_evidence_message_id ON opportunity_evidence(message_id)');
 
             logger.info('Database schema created successfully');
-            resolve();
+            resolve(new DatabaseQueries(db));
           });
         });
       });

@@ -43,7 +43,7 @@ async function runIntegrationTests(): Promise<void> {
     logger.info(`${dbTestsPassed ? '✓' : '✗'} Database Integration Tests`);
     
     if (dbTestsPassed) {
-      logger.success('\nAll required integration tests passed successfully!');
+      logger.info('\n✓ All required integration tests passed successfully!');
       process.exit(0);
     } else {
       throw new Error('Required integration tests failed');

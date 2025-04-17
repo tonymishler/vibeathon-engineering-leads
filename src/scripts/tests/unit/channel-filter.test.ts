@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { logger } from '../../../utils/logger';
+import { logger } from '../../../utils/logger.js';
 
 interface MockChannel {
   id: string;

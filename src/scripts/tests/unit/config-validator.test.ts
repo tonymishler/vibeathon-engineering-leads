@@ -1,7 +1,7 @@
 import assert from 'assert';
-import { validateConfig, validators, configSchemas } from '../../../config/validator';
-import { ConfigurationError } from '../../../utils/errors';
-import { logger } from '../../../utils/logger';
+import { validateConfig, validators, configSchemas } from '../../../config/validator.js';
+import { ConfigurationError } from '../../../utils/errors.js';
+import { logger } from '../../../utils/logger.js';
 
 interface TestResults {
   detectsMissingKeys: boolean;

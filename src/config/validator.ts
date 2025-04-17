@@ -1,4 +1,4 @@
-import { ConfigurationError } from '../utils/errors';
+import { ConfigurationError } from '../utils/errors.js';
 
 interface ConfigKey {
   key: string;

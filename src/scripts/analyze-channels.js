@@ -196,7 +196,16 @@ async function analyzeChannels() {
     logger.error('Failed to complete channel analysis:', error);
     process.exit(1);
   } finally {
-    await dbQueries.close();
+    try {
+      // Clean up all services
+      await Promise.all([
+        slackService.disconnect(),
+        geminiService.disconnect(),
+        dbQueries.close()
+      ]);
+    } catch (cleanupError) {
+      logger.error('Error during cleanup:', cleanupError);
+    }
   }
 }
 

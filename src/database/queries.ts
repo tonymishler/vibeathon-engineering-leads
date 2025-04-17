@@ -5,9 +5,82 @@ import { DatabaseChannel, DatabaseMessage, DatabaseOpportunity, DatabaseOpportun
 
 export class DatabaseQueries {
   private db: InstanceType<typeof Database>;
+  private inTransaction: boolean = false;
 
   constructor(db: InstanceType<typeof Database>) {
     this.db = db;
+  }
+
+  async beginTransaction(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.db.run('BEGIN TRANSACTION', (err: Error | null) => {
+        if (err) {
+          logger.error('Error beginning transaction:', err);
+          reject(err);
+        } else {
+          this.inTransaction = true;
+          resolve();
+        }
+      });
+    });
+  }
+
+  async commitTransaction(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.db.run('COMMIT', (err: Error | null) => {
+        if (err) {
+          logger.error('Error committing transaction:', err);
+          reject(err);
+        } else {
+          this.inTransaction = false;
+          resolve();
+        }
+      });
+    });
+  }
+
+  async rollbackTransaction(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.db.run('ROLLBACK', (err: Error | null) => {
+        if (err) {
+          logger.error('Error rolling back transaction:', err);
+          reject(err);
+        } else {
+          this.inTransaction = false;
+          resolve();
+        }
+      });
+    });
+  }
+
+  isInTransaction(): boolean {
+    return this.inTransaction;
+  }
+
+  async close(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (this.inTransaction) {
+        this.rollbackTransaction()
+          .catch(err => logger.error('Error rolling back transaction during close:', err))
+          .finally(() => {
+            this.db.close((err: Error | null) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve();
+              }
+            });
+          });
+      } else {
+        this.db.close((err: Error | null) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      }
+    });
   }
 
   // Channel queries

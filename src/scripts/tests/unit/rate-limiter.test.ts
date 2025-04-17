@@ -1,6 +1,6 @@
 import assert from 'assert';
-import { RateLimiter } from '../../../utils/rate-limiter';
-import { logger } from '../../../utils/logger';
+import { RateLimiter } from '../../../utils/rate-limiter.js';
+import { logger } from '../../../utils/logger.js';
 
 interface TestResults {
   respectsMaxRequests: boolean;
