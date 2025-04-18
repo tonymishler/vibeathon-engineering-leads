@@ -74,7 +74,7 @@ An AI-powered Slack integration that analyzes channel conversations to identify 
 
 2. Start the channel analysis:
    ```bash
-   npm run analyze-channels
+   npm run analyze:channels
    ```
    This will:
    - Connect to your Slack workspace
