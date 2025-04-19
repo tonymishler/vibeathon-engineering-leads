@@ -63,6 +63,32 @@ interface Context {
   messages: Message[];
 }
 
+function getEstimateColor(estimate: string) {
+  switch (estimate.toLowerCase()) {
+    case 'small':
+      return 'bg-green-100 text-green-800';
+    case 'medium':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'large':
+      return 'bg-red-100 text-red-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
+
+function getValueColor(value: string) {
+  switch (value.toLowerCase()) {
+    case 'high':
+      return 'bg-green-100 text-green-800';
+    case 'medium':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'low':
+      return 'bg-red-100 text-red-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
+
 export default function OpportunityPage() {
   const params = useParams();
   const [loading, setLoading] = useState(true);
@@ -145,6 +171,12 @@ export default function OpportunityPage() {
           <Badge variant="secondary" className="bg-green-100 text-green-800">
             Confidence: {(opportunity.confidence_score * 100).toFixed(0)}%
           </Badge>
+          <Badge variant="secondary" className={getEstimateColor(opportunity.effort_estimate)}>
+            Effort: {opportunity.effort_estimate}
+          </Badge>
+          <Badge variant="secondary" className={getValueColor(opportunity.potential_value)}>
+            Value: {opportunity.potential_value}
+          </Badge>
         </div>
 
         {context && (
@@ -181,17 +213,6 @@ export default function OpportunityPage() {
                 <h3 className="font-medium text-gray-900 mb-2">Implicit Insights</h3>
                 <p className="text-gray-600">{opportunity.implicit_insights}</p>
               </div>
-
-              <div className="grid grid-cols-2 gap-8">
-                <div>
-                  <h3 className="font-medium text-gray-900 mb-2">Effort Estimate</h3>
-                  <p className="text-gray-600">{opportunity.effort_estimate}</p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-gray-900 mb-2">Potential Value</h3>
-                  <p className="text-gray-600">{opportunity.potential_value}</p>
-                </div>
-              </div>
             </div>
           </section>
 
@@ -210,14 +231,22 @@ export default function OpportunityPage() {
 
                 <div>
                   <h3 className="font-medium text-gray-900 mb-2">Channel Activity</h3>
-                  <div className="grid grid-cols-2 gap-8">
-                    <div>
-                      <p className="text-gray-500">Messages</p>
-                      <p className="text-4xl font-medium">{context.channel.message_count}</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-gray-500">Messages</p>
+                        <div className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">Last 90 days</div>
+                      </div>
+                      <p className="text-3xl font-bold text-gray-900 mt-2">{context.channel.message_count}</p>
+                      <p className="text-sm text-gray-500 mt-1">Total messages in channel</p>
                     </div>
-                    <div>
-                      <p className="text-gray-500">Links Shared</p>
-                      <p className="text-4xl font-medium">{context.channel.link_count}</p>
+                    <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-gray-500">Links Shared</p>
+                        <div className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">Last 90 days</div>
+                      </div>
+                      <p className="text-3xl font-bold text-gray-900 mt-2">{context.channel.link_count}</p>
+                      <p className="text-sm text-gray-500 mt-1">Total links shared</p>
                     </div>
                   </div>
                 </div>
@@ -229,14 +258,30 @@ export default function OpportunityPage() {
                       <div key={msg.evidence_id} className="bg-white rounded p-4">
                         <div className="flex items-center justify-between">
                           <span className="font-medium">{msg.authorProfile?.display_name || msg.authorProfile?.real_name || msg.author}</span>
-                          <a 
-                            href={`https://slack.com/app_redirect?channel=${context?.channel.channel_id}&message_ts=${msg.message_id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-gray-500 hover:text-blue-600"
-                          >
-                            {format(new Date(msg.timestamp), 'MMM d, h:mm a')}
-                          </a>
+                          <div className="flex items-center gap-2">
+                            <a 
+                              href={`https://slack.com/app_redirect?channel=${context?.channel.channel_id}&message_ts=${msg.message_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-gray-500 hover:text-blue-600"
+                            >
+                              {format(new Date(msg.timestamp), 'MMM d, h:mm a')}
+                            </a>
+                            <a
+                              href={`https://slack.com/app_redirect?channel=${context?.channel.channel_id}&message_ts=${msg.message_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center justify-center w-6 h-6 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              title="Open in Slack"
+                            >
+                              <svg className="w-4 h-4" viewBox="0 0 122.8 122.8">
+                                <path d="M25.8 77.6c0 7.1-5.8 12.9-12.9 12.9S0 84.7 0 77.6s5.8-12.9 12.9-12.9h12.9v12.9zm6.5 0c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9v32.3c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9V77.6z" fill="currentColor"/>
+                                <path d="M45.2 25.8c-7.1 0-12.9-5.8-12.9-12.9S38.1 0 45.2 0s12.9 5.8 12.9 12.9v12.9H45.2zm0 6.5c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9H12.9C5.8 58.1 0 52.3 0 45.2s5.8-12.9 12.9-12.9h32.3z" fill="currentColor"/>
+                                <path d="M97 45.2c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9-5.8 12.9-12.9 12.9H97V45.2zm-6.5 0c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9V12.9C64.7 5.8 70.5 0 77.6 0s12.9 5.8 12.9 12.9v32.3z" fill="currentColor"/>
+                                <path d="M77.6 97c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9-12.9-5.8-12.9-12.9V97h12.9zm0-6.5c-7.1 0-12.9-5.8-12.9-12.9s5.8-12.9 12.9-12.9h32.3c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9H77.6z" fill="currentColor"/>
+                              </svg>
+                            </a>
+                          </div>
                         </div>
                         <p className="text-gray-600 mt-1">{msg.content}</p>
                         {msg.relevance_note && (

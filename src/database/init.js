@@ -1,7 +1,7 @@
 import pkg from 'sqlite3';
 const { Database } = pkg;
 import { DatabaseQueries } from './queries.js';
-import { logger } from '../utils/logger.js';
+import { logger } from '../utils/logger.ts';
 
 export async function initializeDatabase(dbPath) {
   logger.info(`Initializing database at ${dbPath}`);

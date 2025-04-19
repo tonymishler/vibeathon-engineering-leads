@@ -20,14 +20,16 @@ const colors: Colors = {
 
 interface Logger {
   info: (...args: any[]) => void;
-  warn: (...args: any[]) => void;
   error: (...args: any[]) => void;
+  warn: (...args: any[]) => void;
   debug: (...args: any[]) => void;
 }
 
-export const logger: Logger = {
-  info: (...args: any[]) => console.log('[INFO]', ...args),
-  warn: (...args: any[]) => console.warn('[WARN]', ...args),
-  error: (...args: any[]) => console.error('[ERROR]', ...args),
-  debug: (...args: any[]) => console.debug('[DEBUG]', ...args)
-}; 
+const logger: Logger = {
+  info: (...args) => console.log('[INFO]', ...args),
+  error: (...args) => console.error('[ERROR]', ...args),
+  warn: (...args) => console.warn('[WARN]', ...args),
+  debug: (...args) => console.debug('[DEBUG]', ...args),
+};
+
+export { logger }; 
