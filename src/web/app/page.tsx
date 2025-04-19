@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { PieChartComponent } from "@/components/pie-chart";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface Opportunity {
   opportunity_id: string;
@@ -27,6 +28,7 @@ interface Channel {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [channelStats, setChannelStats] = useState<ChannelStat[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -41,7 +43,6 @@ export default function DashboardPage() {
           throw new Error('Failed to fetch data');
         }
         const data = await response.json();
-        console.log('API Response:', data);
         setOpportunities(data.opportunities);
         setChannelStats(data.channelStats);
         setChannels(data.channels);
@@ -56,12 +57,46 @@ export default function DashboardPage() {
     fetchData();
   }, []);
 
+  const handleOpportunityClick = (opportunityId: string) => {
+    router.push(`/opportunities/${opportunityId}`);
+  };
+
   if (loading) {
-    return <div className="container mx-auto py-8">Loading...</div>;
+    return (
+      <div className="container mx-auto p-6">
+        <h1 className="text-2xl font-semibold mb-6">Opportunities Dashboard</h1>
+        <div className="space-y-6">
+          {/* Loading states */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Opportunities by Channel</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[300px] flex items-center justify-center">
+                <div className="w-[200px] h-[200px] rounded-full bg-gray-200 animate-pulse" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Opportunities</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="animate-pulse space-y-4">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="h-12 bg-gray-200 rounded" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="container mx-auto py-8 text-red-500">Error: {error}</div>;
+    return <div className="container mx-auto p-6 text-red-500">Error: {error}</div>;
   }
 
   // Create channel name mapping
@@ -73,26 +108,22 @@ export default function DashboardPage() {
     value: stat.count
   }));
 
-  console.log('Pie Chart Data:', pieData);
-
   return (
-    <div className="container mx-auto py-8">
-      <h1 className="text-3xl font-bold mb-8">Opportunities Dashboard</h1>
+    <div className="container mx-auto p-6">
+      <h1 className="text-2xl font-semibold mb-6">Opportunities Dashboard</h1>
       
-      <div className="grid gap-8">
-        {/* Pie Chart Card */}
+      <div className="space-y-6">
+        {/* Pie Chart */}
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-2">
-              <CardTitle>Opportunities by Channel</CardTitle>
-            </div>
+            <CardTitle>Opportunities by Channel</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[400px]">
+            <div className="h-[300px]">
               {pieData.length > 0 ? (
                 <PieChartComponent data={pieData} />
               ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
+                <div className="flex items-center justify-center h-full text-gray-500">
                   No data available
                 </div>
               )}
@@ -100,7 +131,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Opportunities List */}
+        {/* Recent Opportunities */}
         <Card>
           <CardHeader>
             <CardTitle>Recent Opportunities</CardTitle>
@@ -118,21 +149,29 @@ export default function DashboardPage() {
               </TableHeader>
               <TableBody>
                 {opportunities.map((opp) => (
-                  <TableRow key={opp.opportunity_id}>
+                  <TableRow 
+                    key={opp.opportunity_id}
+                    onClick={() => handleOpportunityClick(opp.opportunity_id)}
+                    className="cursor-pointer hover:bg-gray-50"
+                  >
                     <TableCell className="font-medium">{opp.title}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{opp.type}</Badge>
+                      <Badge variant="outline" className="capitalize">
+                        {opp.type}
+                      </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="w-full bg-gray-200 rounded-full h-2.5">
+                      <div className="w-32 bg-gray-200 rounded-full h-2">
                         <div
-                          className="bg-blue-600 h-2.5 rounded-full"
+                          className="bg-blue-500 h-2 rounded-full"
                           style={{ width: `${opp.confidence_score * 100}%` }}
                         />
                       </div>
                     </TableCell>
-                    <TableCell>{opp.scope}</TableCell>
-                    <TableCell>{format(new Date(opp.detected_at), 'MMM d, yyyy')}</TableCell>
+                    <TableCell className="capitalize">{opp.scope}</TableCell>
+                    <TableCell className="text-gray-600">
+                      {format(new Date(opp.detected_at), 'MMM d, yyyy')}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

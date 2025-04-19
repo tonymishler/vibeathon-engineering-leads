@@ -1,7 +1,7 @@
 import pkg from 'sqlite3';
 const { Database } = pkg;
-import { logger } from '../utils/logger.js';
-import { DatabaseChannel, DatabaseMessage, DatabaseOpportunity, DatabaseOpportunityEvidence } from '../types/database.js';
+import { logger } from '../utils/logger';
+import { DatabaseChannel, DatabaseMessage, DatabaseOpportunity, DatabaseOpportunityEvidence } from '../types/database';
 
 export class DatabaseQueries {
   private db: InstanceType<typeof Database>;
@@ -367,6 +367,125 @@ export class DatabaseQueries {
           resolve();
         }
       });
+    });
+  }
+
+  async upsertUser(user: {
+    user_id: string;
+    display_name?: string;
+    real_name?: string;
+    title?: string;
+    email?: string;
+    avatar_url?: string;
+  }): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const now = new Date().toISOString();
+      const sql = `
+        INSERT INTO users (
+          user_id, display_name, real_name, title, email, avatar_url, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          display_name = excluded.display_name,
+          real_name = excluded.real_name,
+          title = excluded.title,
+          email = excluded.email,
+          avatar_url = excluded.avatar_url,
+          updated_at = excluded.updated_at`;
+      
+      this.db.run(sql, [
+        user.user_id,
+        user.display_name || null,
+        user.real_name || null,
+        user.title || null,
+        user.email || null,
+        user.avatar_url || null,
+        now
+      ], function(err) {
+        if (err) {
+          logger.error('Error upserting user:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  async batchUpsertUsers(users: Array<{
+    user_id: string;
+    display_name?: string;
+    real_name?: string;
+    title?: string;
+    email?: string;
+    avatar_url?: string;
+  }>): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const now = new Date().toISOString();
+      this.db.serialize(() => {
+        const stmt = this.db.prepare(`
+          INSERT INTO users (
+            user_id, display_name, real_name, title, email, avatar_url, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(user_id) DO UPDATE SET
+            display_name = excluded.display_name,
+            real_name = excluded.real_name,
+            title = excluded.title,
+            email = excluded.email,
+            avatar_url = excluded.avatar_url,
+            updated_at = excluded.updated_at`);
+
+        try {
+          for (const user of users) {
+            stmt.run(
+              user.user_id,
+              user.display_name || null,
+              user.real_name || null,
+              user.title || null,
+              user.email || null,
+              user.avatar_url || null,
+              now
+            );
+          }
+          stmt.finalize();
+          resolve();
+        } catch (err) {
+          logger.error('Error in batch user upsert:', err);
+          reject(err);
+        }
+      });
+    });
+  }
+
+  async getUserById(userId: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        'SELECT * FROM users WHERE user_id = ?',
+        [userId],
+        (err, row) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(row);
+        }
+      );
+    });
+  }
+
+  async getUsersByIds(userIds: string[]): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      const placeholders = userIds.map(() => '?').join(',');
+      this.db.all(
+        `SELECT * FROM users WHERE user_id IN (${placeholders})`,
+        userIds,
+        (err, rows) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(rows || []);
+        }
+      );
     });
   }
 } 

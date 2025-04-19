@@ -4,6 +4,7 @@ export interface Opportunity {
   title: string;
   description: string;
   implicit_insights: string;
+  key_participants: string;
   confidence_score: number;
   scope: string;
   effort_estimate: string;

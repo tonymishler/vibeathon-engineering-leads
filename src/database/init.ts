@@ -1,8 +1,8 @@
 import pkg from 'sqlite3';
 const { Database } = pkg;
-import { logger } from '../utils/logger.js';
+import { logger } from '../utils/logger';
 import path from 'path';
-import { DatabaseQueries } from './queries.js';
+import { DatabaseQueries } from './queries';
 
 export async function initializeDatabase(dbPath: string): Promise<DatabaseQueries> {
   return new Promise((resolve, reject) => {
@@ -67,6 +67,19 @@ export async function initializeDatabase(dbPath: string): Promise<DatabaseQuerie
             window_type TEXT NOT NULL,
             context_data TEXT,
             FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
+          )
+        `);
+
+        // Create users table
+        db.run(`
+          CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            display_name TEXT,
+            real_name TEXT,
+            title TEXT,
+            email TEXT,
+            avatar_url TEXT,
+            updated_at TEXT NOT NULL
           )
         `);
 

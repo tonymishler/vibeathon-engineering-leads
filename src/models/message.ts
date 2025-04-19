@@ -75,4 +75,19 @@ export class Message {
       timestamp: parseInt(record.timestamp, 10)
     });
   }
+
+  static fromSlackAPI(msg: any, channelId: string): Message {
+    return new Message({
+      id: msg.ts,
+      channelId: channelId,
+      userId: msg.user || 'unknown',
+      content: msg.text || '',
+      threadTs: msg.thread_ts || null,
+      replyCount: msg.reply_count || 0,
+      reactionCount: (msg.reactions || []).length,
+      linkCount: ((msg.text || '').match(/https?:\/\/[^\s]+/g) || []).length,
+      mentionCount: ((msg.text || '').match(/<@[A-Z0-9]+>/g) || []).length,
+      timestamp: Math.floor(parseFloat(msg.ts) * 1000)
+    });
+  }
 } 

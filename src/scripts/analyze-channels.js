@@ -116,9 +116,34 @@ async function processChannel(channel, slackService, geminiService, dbQueries) {
       console.log(`✓ Found ${messages.length} messages and ${threads.size} threads`);
     }
 
+    // Collect all unique user IDs from messages and threads
+    const userIds = new Set();
+    messages.forEach(msg => msg.userId && userIds.add(msg.userId));
+    for (const threadMessages of threads.values()) {
+      threadMessages.forEach(msg => msg.userId && userIds.add(msg.userId));
+    }
+    
+    // Fetch and store user profiles
+    if (userIds.size > 0) {
+      console.log(`Fetching profiles for ${userIds.size} users...`);
+      const userProfiles = await slackService.getUserProfiles(Array.from(userIds));
+      
+      // Convert profiles to database format
+      const usersToStore = Array.from(userProfiles.entries()).map(([userId, profile]) => ({
+        user_id: userId,
+        display_name: profile.display_name || null,
+        real_name: profile.real_name || null,
+        title: profile.title || null,
+        email: profile.email || null,
+        avatar_url: profile.image_72 || null // Using the 72px avatar image
+      }));
+      
+      await dbQueries.batchUpsertUsers(usersToStore);
+      console.log('✓ User profiles stored');
+    }
+
     // Store messages in database
     console.log('Storing messages in database...');
-    console.log('First message:', JSON.stringify(messages[0], null, 2));
     const messagesToStore = messages.map(msg => msg.toDatabase());
     
     await dbQueries.batchInsertMessages(messagesToStore);

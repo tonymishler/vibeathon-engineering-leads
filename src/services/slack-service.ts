@@ -1,7 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import dotenv from 'dotenv';
-import { Message } from './message.js';
+import { Message } from '../models/message';
+import path from 'path';
 
 dotenv.config();
 
@@ -19,12 +20,16 @@ export class SlackService {
   private isInitialized: boolean = false;
   private client: Client | null = null;
   private transport: StdioClientTransport | null = null;
+  private userCache: Map<string, any> = new Map();
 
   async initialize() {
     if (!this.isInitialized) {
+      const projectRoot = process.cwd();
+      const serverPath = path.join(projectRoot, 'node_modules', '@modelcontextprotocol', 'server-slack', 'dist', 'index.js');
+      
       this.transport = new StdioClientTransport({
         command: "node",
-        args: ["./node_modules/@modelcontextprotocol/server-slack/dist/index.js"],
+        args: [serverPath],
         env: {
           SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN || '',
           SLACK_TEAM_ID: process.env.SLACK_TEAM_ID || '',
@@ -157,7 +162,7 @@ export class SlackService {
       messages.push(...newMessages);
 
       if (messages.length > 0) {
-        oldestTimestamp = messages[messages.length - 1].timestamp.getTime() / 1000;
+        oldestTimestamp = Math.floor(messages[messages.length - 1].timestamp / 1000);
       }
 
       if (slackResponse.messages.length < batchSize) {
@@ -215,6 +220,52 @@ export class SlackService {
       messages,
       threads
     };
+  }
+
+  async getUserProfile(userId: string): Promise<any> {
+    if (this.userCache.has(userId)) {
+      return this.userCache.get(userId);
+    }
+
+    await this.initialize();
+    
+    try {
+      const result = await this.client!.callTool({
+        name: "slack_get_user_profile",
+        arguments: {
+          user_id: userId
+        }
+      });
+
+      const content = result?.content;
+      if (Array.isArray(content) && content.length > 0 && content[0]?.text) {
+        const response = JSON.parse(content[0].text);
+        if (response.ok && response.profile) {
+          this.userCache.set(userId, response.profile);
+          return response.profile;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.warn(`Failed to fetch user profile for ${userId}:`, error);
+      return null;
+    }
+  }
+
+  async getUserProfiles(userIds: string[]): Promise<Map<string, any>> {
+    const uniqueIds = [...new Set(userIds)];
+    const profiles = new Map();
+
+    await Promise.all(
+      uniqueIds.map(async (userId) => {
+        const profile = await this.getUserProfile(userId);
+        if (profile) {
+          profiles.set(userId, profile);
+        }
+      })
+    );
+
+    return profiles;
   }
 
   async disconnect() {
