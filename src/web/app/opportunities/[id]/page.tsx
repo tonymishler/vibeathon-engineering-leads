@@ -2,14 +2,19 @@
 
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
+import { SlackMessageThread, SlackMessageThreadHandle } from '@/components/SlackMessageThread';
+import '@/styles/slack-messages.css';
 
 interface Message {
-  id: string;
+  message_id: string;
   content: string;
   author: string;
   timestamp: string;
+  thread_id: string | null;
+  is_evidence?: boolean;
+  trigger_text?: string;
   authorProfile?: {
     display_name: string | null;
     real_name: string | null;
@@ -96,6 +101,7 @@ export default function OpportunityPage() {
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [context, setContext] = useState<Context | null>(null);
+  const threadRef = useRef<SlackMessageThreadHandle>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -182,7 +188,7 @@ export default function OpportunityPage() {
         {context && (
           <div className="flex items-center gap-2 text-gray-600 text-sm mb-8">
             <a 
-              href={`https://slack.com/app_redirect?channel=${context.channel.channel_id}`} 
+              href={`https://slack.com/app_redirect?channel=${context.channel.channel_id}&message_ts=${context.messages[0].timestamp}`}
               target="_blank" 
               rel="noopener noreferrer" 
               className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full hover:bg-blue-100 transition-colors"
@@ -251,97 +257,55 @@ export default function OpportunityPage() {
                   </div>
                 </div>
 
-                <div>
-                  <h3 className="font-medium text-gray-900 mb-2">Recent Messages</h3>
-                  <div className="space-y-4">
-                    {evidence.map((msg) => (
-                      <div key={msg.evidence_id} className="bg-white rounded p-4">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium">{msg.authorProfile?.display_name || msg.authorProfile?.real_name || msg.author}</span>
-                          <div className="flex items-center gap-2">
-                            <a 
-                              href={`https://slack.com/app_redirect?channel=${context?.channel.channel_id}&message_ts=${msg.message_id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm text-gray-500 hover:text-blue-600"
-                            >
-                              {format(new Date(msg.timestamp), 'MMM d, h:mm a')}
-                            </a>
-                            <a
-                              href={`https://slack.com/app_redirect?channel=${context?.channel.channel_id}&message_ts=${msg.message_id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center justify-center w-6 h-6 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                              title="Open in Slack"
-                            >
-                              <svg className="w-4 h-4" viewBox="0 0 122.8 122.8">
-                                <path d="M25.8 77.6c0 7.1-5.8 12.9-12.9 12.9S0 84.7 0 77.6s5.8-12.9 12.9-12.9h12.9v12.9zm6.5 0c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9v32.3c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9V77.6z" fill="currentColor"/>
-                                <path d="M45.2 25.8c-7.1 0-12.9-5.8-12.9-12.9S38.1 0 45.2 0s12.9 5.8 12.9 12.9v12.9H45.2zm0 6.5c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9H12.9C5.8 58.1 0 52.3 0 45.2s5.8-12.9 12.9-12.9h32.3z" fill="currentColor"/>
-                                <path d="M97 45.2c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9-5.8 12.9-12.9 12.9H97V45.2zm-6.5 0c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9V12.9C64.7 5.8 70.5 0 77.6 0s12.9 5.8 12.9 12.9v32.3z" fill="currentColor"/>
-                                <path d="M77.6 97c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9-12.9-5.8-12.9-12.9V97h12.9zm0-6.5c-7.1 0-12.9-5.8-12.9-12.9s5.8-12.9 12.9-12.9h32.3c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9H77.6z" fill="currentColor"/>
-                              </svg>
-                            </a>
-                          </div>
+                {evidence && evidence.length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-gray-900 mb-2">Supporting Evidence</h3>
+                    <div 
+                      className="bg-blue-50 border border-blue-100 p-4 rounded-lg mb-6 cursor-pointer hover:bg-blue-100 transition-colors duration-200"
+                      onClick={() => threadRef.current?.scrollToEvidence()}
+                      role="button"
+                      tabIndex={0}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          threadRef.current?.scrollToEvidence();
+                        }
+                      }}
+                    >
+                      <div className="flex items-start space-x-3">
+                        <div className="flex-shrink-0">
+                          <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
                         </div>
-                        <p className="text-gray-600 mt-1">{msg.content}</p>
-                        {msg.relevance_note && (
-                          <p className="text-sm text-gray-500 mt-2">{msg.relevance_note}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {evidence && evidence.length > 0 && (
-            <section className="bg-white rounded-lg p-6 shadow-sm">
-              <h2 className="text-lg font-semibold mb-4">Supporting Evidence</h2>
-              <div className="space-y-6">
-                {evidence.map((item) => (
-                  <div key={item.evidence_id} className="border-b border-gray-100 last:border-0 pb-6 last:pb-0">
-                    <div className="flex items-start gap-3 mb-2">
-                      {item.authorProfile?.avatar_url ? (
-                        <img 
-                          src={item.authorProfile.avatar_url} 
-                          alt={item.authorProfile.display_name || item.authorProfile.real_name || 'User'} 
-                          className="w-8 h-8 rounded-full"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                          <span className="text-gray-500 text-sm">?</span>
+                        <div>
+                          <p className="text-sm text-blue-700 font-medium">Key messages that support this opportunity</p>
+                          <p className="mt-1 text-sm text-blue-600">The following messages have been identified as strong evidence for this opportunity. They are also highlighted in blue in the conversation timeline below.</p>
                         </div>
-                      )}
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <a 
-                            href={`https://slack.com/app_redirect?team=${context?.channel.team_id}&user=${item.author}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-medium text-gray-900 hover:underline"
-                          >
-                            {item.authorProfile?.display_name || item.authorProfile?.real_name || item.author}
-                          </a>
-                          <a 
-                            href={`https://slack.com/app_redirect?channel=${context?.channel.channel_id}&message_ts=${item.message_id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-gray-500 hover:underline"
-                          >
-                            {format(new Date(item.timestamp), 'MMM d, yyyy h:mm a')}
-                          </a>
-                        </div>
-                        <p className="text-gray-600 mt-1">{item.content}</p>
-                        {item.relevance_note && (
-                          <p className="text-sm text-gray-500 mt-2 italic">
-                            {item.relevance_note}
-                          </p>
-                        )}
                       </div>
                     </div>
                   </div>
-                ))}
+                )}
+
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-2">Conversation Timeline</h3>
+                  <div className="transition-all duration-200 hover:ring-2 hover:ring-blue-100 rounded-lg">
+                    <SlackMessageThread 
+                      ref={threadRef}
+                      messages={context.messages.map(msg => {
+                        const evidenceItem = !msg.is_evidence ? evidence.find(e => e.message_id === msg.message_id || e.timestamp === msg.timestamp) : null;
+                        return {
+                          ...msg,
+                          message_id: msg.message_id || `${msg.timestamp}-${msg.author}`,
+                          is_evidence: msg.is_evidence || !!evidenceItem,
+                          trigger_text: (msg.is_evidence || !!evidenceItem) ? 'This is where we\'ll log things like "Braze + AWS," "Braze for B2B," and our new idea: helping brands' : undefined,
+                          channel_id: context.channel.channel_id,
+                          team_id: context.channel.team_id
+                        };
+                      })}
+                      maxHeight="400px"
+                    />
+                  </div>
+                </div>
               </div>
             </section>
           )}

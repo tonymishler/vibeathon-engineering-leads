@@ -8,6 +8,7 @@ import { PieChartComponent } from "@/components/pie-chart";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Flyout } from "@/components/ui/flyout";
+import { HomeIcon, ChevronRightIcon } from '@heroicons/react/20/solid';
 
 interface Opportunity {
   opportunity_id: string;
@@ -27,6 +28,7 @@ interface Opportunity {
 interface ChannelStat {
   channel_id: string;
   count: number;
+  opportunity_ids: string[];
 }
 
 interface Channel {
@@ -44,6 +46,17 @@ interface PreviewData {
   };
 }
 
+interface ChartState {
+  type: 'channel' | 'type' | 'scope' | 'effort' | 'value';
+  filter?: {
+    channel?: string;
+    type?: string;
+    scope?: string;
+    effort?: string;
+    value?: string;
+  };
+}
+
 export default function OppVibePage() {
   const router = useRouter();
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
@@ -53,6 +66,7 @@ export default function OppVibePage() {
   const [error, setError] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [chartState, setChartState] = useState<ChartState>({ type: 'channel' });
 
   useEffect(() => {
     async function fetchData() {
@@ -90,6 +104,176 @@ export default function OppVibePage() {
       setPreviewOpen(true);
     } catch (err) {
       console.error('Error:', err);
+    }
+  };
+
+  // Prepare data for pie chart based on current state
+  const getPieData = () => {
+    let filteredOpps = opportunities;
+    const filter = chartState.filter;
+
+    // Apply filters
+    if (filter) {
+      if (filter.channel) {
+        filteredOpps = filteredOpps.filter(opp => {
+          const channelStat = channelStats.find(stat => 
+            stat.channel_id === filter.channel && 
+            stat.opportunity_ids.includes(opp.opportunity_id)
+          );
+          return channelStat !== undefined;
+        });
+      }
+      if (filter.type) {
+        filteredOpps = filteredOpps.filter(opp => opp.type === filter.type);
+      }
+      if (filter.scope) {
+        filteredOpps = filteredOpps.filter(opp => opp.scope === filter.scope);
+      }
+    }
+
+    // Group by current chart type
+    const groupedData = new Map<string, number>();
+    
+    switch (chartState.type) {
+      case 'channel':
+        channelStats.forEach(stat => {
+          const name = channelMap.get(stat.channel_id) || stat.channel_id;
+          groupedData.set(name, stat.count);
+        });
+        break;
+      
+      case 'type':
+        filteredOpps.forEach(opp => {
+          const count = groupedData.get(opp.type) || 0;
+          groupedData.set(opp.type, count + 1);
+        });
+        break;
+      
+      case 'scope':
+        filteredOpps.forEach(opp => {
+          const count = groupedData.get(opp.scope) || 0;
+          groupedData.set(opp.scope, count + 1);
+        });
+        break;
+
+      case 'effort':
+        filteredOpps.forEach(opp => {
+          const count = groupedData.get(opp.effort_estimate) || 0;
+          groupedData.set(opp.effort_estimate, count + 1);
+        });
+        break;
+
+      case 'value':
+        filteredOpps.forEach(opp => {
+          const count = groupedData.get(opp.potential_value) || 0;
+          groupedData.set(opp.potential_value, count + 1);
+        });
+        break;
+    }
+
+    return Array.from(groupedData.entries()).map(([name, value]) => ({
+      name,
+      value,
+      id: name.toLowerCase()
+    }));
+  };
+
+  const handleChartClick = (data: { name: string; value: number; id?: string }) => {
+    if (chartState.type === 'channel') {
+      // When clicking a channel, drill down to type distribution
+      setChartState({
+        type: 'type',
+        filter: { 
+          ...chartState.filter,
+          channel: channels.find(c => c.name === data.name)?.channel_id 
+        }
+      });
+    } else if (chartState.type === 'type') {
+      // When clicking a type, drill down to scope distribution
+      setChartState({
+        type: 'scope',
+        filter: { 
+          ...chartState.filter,
+          type: data.name 
+        }
+      });
+    } else if (chartState.type === 'scope') {
+      // When clicking a scope, drill down to effort distribution
+      setChartState({
+        type: 'effort',
+        filter: {
+          ...chartState.filter,
+          scope: data.name
+        }
+      });
+    } else if (chartState.type === 'effort') {
+      // When clicking an effort level, drill down to value distribution
+      setChartState({
+        type: 'value',
+        filter: {
+          ...chartState.filter,
+          effort: data.name
+        }
+      });
+    }
+  };
+
+  const handleBreadcrumbClick = (level: 'root' | 'channel' | 'type' | 'scope' | 'effort') => {
+    switch (level) {
+      case 'root':
+        setChartState({ type: 'channel' });
+        break;
+      case 'channel':
+        setChartState({
+          type: 'type',
+          filter: { channel: chartState.filter?.channel }
+        });
+        break;
+      case 'type':
+        setChartState({
+          type: 'scope',
+          filter: {
+            channel: chartState.filter?.channel,
+            type: chartState.filter?.type
+          }
+        });
+        break;
+      case 'scope':
+        setChartState({
+          type: 'effort',
+          filter: {
+            channel: chartState.filter?.channel,
+            type: chartState.filter?.type,
+            scope: chartState.filter?.scope
+          }
+        });
+        break;
+      case 'effort':
+        setChartState({
+          type: 'value',
+          filter: {
+            channel: chartState.filter?.channel,
+            type: chartState.filter?.type,
+            scope: chartState.filter?.scope,
+            effort: chartState.filter?.effort
+          }
+        });
+        break;
+    }
+  };
+
+  const getChartTitle = () => {
+    switch (chartState.type) {
+      case 'channel':
+        return 'Distribution by Channel';
+      case 'type':
+        return `Distribution by Type${chartState.filter?.channel ? ` in ${channelMap.get(chartState.filter.channel)}` : ''}`;
+      case 'scope':
+        return `Distribution by Scope${chartState.filter?.type ? ` for ${chartState.filter.type}` : ''}`;
+      case 'effort':
+        return `Distribution by Effort${chartState.filter?.scope ? ` for ${chartState.filter.scope} Scope` : ''}`;
+      case 'value':
+        return `Distribution by Value${chartState.filter?.effort ? ` for ${chartState.filter.effort} Effort` : ''}`;
     }
   };
 
@@ -134,12 +318,6 @@ export default function OppVibePage() {
   // Create channel name mapping
   const channelMap = new Map(channels.map(c => [c.channel_id, c.name]));
 
-  // Prepare data for pie chart
-  const pieData = channelStats.map(stat => ({
-    name: channelMap.get(stat.channel_id) || stat.channel_id,
-    value: stat.count
-  }));
-
   function getConfidenceColor(score: number) {
     if (score >= 0.7) return 'bg-green-100 text-green-800';
     if (score >= 0.4) return 'bg-yellow-100 text-yellow-800';
@@ -177,15 +355,80 @@ export default function OppVibePage() {
       <h1 className="text-2xl font-semibold mb-6">OppVibe</h1>
       
       <div className="space-y-6">
-        {/* Pie Chart */}
+        {/* Pie Chart Card */}
         <Card className="bg-white">
           <CardHeader>
-            <CardTitle>Opportunities by Channel</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Opportunities Analysis</CardTitle>
+              
+              {/* Breadcrumb Navigation */}
+              <nav className="flex items-center space-x-2 text-sm">
+                <button
+                  onClick={() => handleBreadcrumbClick('root')}
+                  className={`flex items-center ${chartState.type === 'channel' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
+                >
+                  <HomeIcon className="h-4 w-4 mr-1" />
+                  Channels
+                </button>
+                
+                {chartState.filter?.channel && (
+                  <>
+                    <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                    <button
+                      onClick={() => handleBreadcrumbClick('channel')}
+                      className={`${chartState.type === 'type' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
+                    >
+                      {channelMap.get(chartState.filter.channel)}
+                    </button>
+                  </>
+                )}
+                
+                {chartState.filter?.type && (
+                  <>
+                    <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                    <button
+                      onClick={() => handleBreadcrumbClick('type')}
+                      className={`${chartState.type === 'scope' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
+                    >
+                      {chartState.filter.type}
+                    </button>
+                  </>
+                )}
+
+                {chartState.filter?.scope && (
+                  <>
+                    <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                    <button
+                      onClick={() => handleBreadcrumbClick('scope')}
+                      className={`${chartState.type === 'effort' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
+                    >
+                      {chartState.filter.scope}
+                    </button>
+                  </>
+                )}
+
+                {chartState.filter?.effort && (
+                  <>
+                    <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                    <button
+                      onClick={() => handleBreadcrumbClick('effort')}
+                      className={`${chartState.type === 'value' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
+                    >
+                      {chartState.filter.effort}
+                    </button>
+                  </>
+                )}
+              </nav>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
-              {pieData.length > 0 ? (
-                <PieChartComponent data={pieData} />
+              {getPieData().length > 0 ? (
+                <PieChartComponent 
+                  data={getPieData()} 
+                  onSliceClick={handleChartClick}
+                  title={getChartTitle()}
+                />
               ) : (
                 <div className="flex items-center justify-center h-full text-gray-500">
                   No data available
@@ -195,7 +438,7 @@ export default function OppVibePage() {
           </CardContent>
         </Card>
 
-        {/* Recent Opportunities */}
+        {/* Recent Opportunities Card - Now filtered based on chart state */}
         <Card className="bg-white">
           <CardHeader>
             <CardTitle>Recent Opportunities</CardTitle>
@@ -212,32 +455,46 @@ export default function OppVibePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {opportunities.map((opportunity) => (
-                  <TableRow 
-                    key={opportunity.opportunity_id}
-                    onClick={() => handlePreviewClick(opportunity.opportunity_id)}
-                    className="cursor-pointer hover:bg-gray-50"
-                  >
-                    <TableCell className="font-medium">{opportunity.title}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="capitalize">
-                        {opportunity.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="w-32 bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-blue-500 h-2 rounded-full"
-                          style={{ width: `${opportunity.confidence_score * 100}%` }}
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell className="capitalize">{opportunity.scope}</TableCell>
-                    <TableCell className="text-gray-600">
-                      {format(new Date(opportunity.detected_at), 'MMM d, yyyy')}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {opportunities
+                  .filter(opp => {
+                    if (!chartState.filter) return true;
+                    if (chartState.filter.channel) {
+                      const channelStat = channelStats.find(stat => 
+                        stat.channel_id === chartState.filter?.channel && 
+                        stat.opportunity_ids.includes(opp.opportunity_id)
+                      );
+                      if (!channelStat) return false;
+                    }
+                    if (chartState.filter.type && opp.type !== chartState.filter.type) return false;
+                    if (chartState.filter.scope && opp.scope !== chartState.filter.scope) return false;
+                    return true;
+                  })
+                  .map((opportunity) => (
+                    <TableRow 
+                      key={opportunity.opportunity_id}
+                      onClick={() => handlePreviewClick(opportunity.opportunity_id)}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
+                      <TableCell className="font-medium">{opportunity.title}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="capitalize">
+                          {opportunity.type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="w-32 bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-500 h-2 rounded-full"
+                            style={{ width: `${opportunity.confidence_score * 100}%` }}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell className="capitalize">{opportunity.scope}</TableCell>
+                      <TableCell className="text-gray-600">
+                        {format(new Date(opportunity.detected_at), 'MMM d, yyyy')}
+                      </TableCell>
+                    </TableRow>
+                  ))}
               </TableBody>
             </Table>
           </CardContent>

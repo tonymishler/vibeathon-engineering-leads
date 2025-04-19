@@ -2,6 +2,7 @@ export interface DatabaseChannel {
   channel_id: string;
   name: string;
   type: string;
+  team_id: string;
   created_at: string;
   last_analyzed: string;
   member_count: number;

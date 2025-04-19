@@ -49,9 +49,11 @@
     "@modelcontextprotocol/sdk": "^1.9.0",
     "@modelcontextprotocol/server-slack": "^2025.1.17",
     "dotenv": "latest",
+    "framer-motion": "^12.7.4",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "tailwindcss-animate": "^1.0.7",
+    "twemoji": "^14.0.2",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
