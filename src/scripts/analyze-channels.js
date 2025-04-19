@@ -7,78 +7,33 @@ import { geminiService } from '../services/gemini-service.js';
 import { logger } from '../utils/logger.js';
 import path from 'path';
 import { initializeDatabase } from '../database/init.js';
-import { SlackService } from '../services/slack-service.js';
 import { Message } from '../services/message.js';
 
 const MESSAGE_LIMIT = 50;
 const TIME_WINDOW_DAYS = 90;
 
 async function buildChannelContext(channel, messages) {
+  // Get the current date
   const now = new Date();
-  const threeMonthsAgo = new Date(now.getTime() - (TIME_WINDOW_DAYS * 24 * 60 * 60 * 1000));
-
-  // Get unique participants and their message counts
-  const participantCounts = new Map();
-  messages.forEach(msg => {
-    participantCounts.set(msg.author, (participantCounts.get(msg.author) || 0) + 1);
-  });
-
-  // Sort participants by message count to find key contributors
-  const keyContributors = Array.from(participantCounts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([author]) => author);
-
-  // Calculate messages per day
-  const daysDiff = (now.getTime() - threeMonthsAgo.getTime()) / (24 * 60 * 60 * 1000);
-  const messagesPerDay = messages.length / daysDiff;
-
-  // Count active threads
-  const activeThreads = new Set(messages.filter(m => m.thread_id).map(m => m.thread_id)).size;
-
-  // Find peak activity times
-  const activityByHour = new Map();
-  messages.forEach(msg => {
-    const hour = new Date(msg.timestamp).getHours();
-    activityByHour.set(hour, (activityByHour.get(hour) || 0) + 1);
-  });
-
-  const peakHours = Array.from(activityByHour.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([hour]) => {
-      const date = new Date();
-      date.setHours(hour, 0, 0, 0);
-      return date.toISOString();
-    });
+  
+  // Set analysis window to last 90 days
+  const endDate = now;
+  const startDate = new Date(now);
+  startDate.setDate(startDate.getDate() - 90);
 
   return {
-    channel_name: channel.name,
-    channel_type: channel.is_private ? 'private' : 'standard',
-    topic: channel.topic?.value || '',
-    purpose: channel.purpose?.value || '',
     message_window: {
-      start_date: threeMonthsAgo.toISOString(),
-      end_date: now.toISOString(),
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
       message_count: messages.length,
-      window_type: 'time_limit'
+      window_type: 'rolling_90_days'
     },
-    messages: messages.map(msg => ({
-      author: msg.author,
-      content: msg.content,
-      timestamp: new Date(msg.timestamp).toISOString(),
-      thread_id: msg.thread_id,
-      reactions: msg.reactions || [],
-      has_attachments: msg.has_attachments
-    })),
-    participants: {
-      active_count: participantCounts.size,
-      key_contributors: keyContributors
-    },
-    activity_metrics: {
-      messages_per_day: messagesPerDay,
-      active_threads: activeThreads,
-      peak_activity_times: peakHours
+    channel_stats: {
+      member_count: channel.memberCount || 0,
+      total_messages: messages.length,
+      active_threads: messages.filter(m => m.thread_ts).length,
+      links_shared: messages.filter(m => m.links && m.links.length > 0).length,
+      mentions: messages.reduce((acc, m) => acc + (m.mentions?.length || 0), 0)
     }
   };
 }
@@ -97,6 +52,7 @@ async function processChannel(channel, slackService, geminiService, dbQueries) {
       channel_id: channel.id,
       name: channel.name,
       type: channel.is_private ? 'private' : 'standard',
+      team_id: process.env.SLACK_TEAM_ID || '',
       created_at: now,
       last_analyzed: now,
       member_count: channel.num_members || 0,
@@ -114,32 +70,6 @@ async function processChannel(channel, slackService, geminiService, dbQueries) {
 
     if (messages.length > 0) {
       console.log(`✓ Found ${messages.length} messages and ${threads.size} threads`);
-    }
-
-    // Collect all unique user IDs from messages and threads
-    const userIds = new Set();
-    messages.forEach(msg => msg.userId && userIds.add(msg.userId));
-    for (const threadMessages of threads.values()) {
-      threadMessages.forEach(msg => msg.userId && userIds.add(msg.userId));
-    }
-    
-    // Fetch and store user profiles
-    if (userIds.size > 0) {
-      console.log(`Fetching profiles for ${userIds.size} users...`);
-      const userProfiles = await slackService.getUserProfiles(Array.from(userIds));
-      
-      // Convert profiles to database format
-      const usersToStore = Array.from(userProfiles.entries()).map(([userId, profile]) => ({
-        user_id: userId,
-        display_name: profile.display_name || null,
-        real_name: profile.real_name || null,
-        title: profile.title || null,
-        email: profile.email || null,
-        avatar_url: profile.image_72 || null // Using the 72px avatar image
-      }));
-      
-      await dbQueries.batchUpsertUsers(usersToStore);
-      console.log('✓ User profiles stored');
     }
 
     // Store messages in database
@@ -248,54 +178,152 @@ async function processChannel(channel, slackService, geminiService, dbQueries) {
 
 async function analyzeChannels() {
   let dbQueries = null;
-  let slackService = null;
   
   try {
+    console.log('\n=== Starting Channel Analysis ===');
+    
     // Initialize database with path
+    console.log('\n1. Database Initialization');
+    console.log('Initializing database at opportunities.db...');
     dbQueries = await initializeDatabase('opportunities.db');
+    console.log('✓ Database initialized');
     
     // Initialize services
-    slackService = new SlackService();
-    await slackService.initialize();
+    console.log('\n2. Service Initialization');
+    console.log('Initializing Slack service...');
+    try {
+      await slackService.initialize();
+      console.log('✓ Slack service initialized');
+    } catch (error) {
+      console.error('Failed to initialize Slack service:', error);
+      throw error;
+    }
+
+    // Fetch and store all workspace users first
+    console.log('\n3. User Synchronization');
+    console.log('Starting user fetch from Slack...');
+    let allUsers;
+    try {
+      allUsers = await slackService.getAllUsers();
+      console.log(`✓ Successfully fetched ${allUsers.length} users from Slack`);
+    } catch (error) {
+      console.error('Failed to fetch users from Slack:', error);
+      throw error;
+    }
+
+    // Convert users to database format and store them
+    console.log('Converting user data to database format...');
+    const usersToStore = allUsers.map(user => ({
+      user_id: user.id,
+      display_name: user.profile?.display_name || null,
+      real_name: user.profile?.real_name || null,
+      title: user.profile?.title || null,
+      email: user.profile?.email || null,
+      avatar_url: user.profile?.image_72 || null,
+      team_id: user.team_id || null,
+      is_admin: user.is_admin || false,
+      is_owner: user.is_owner || false,
+      is_primary_owner: user.is_primary_owner || false,
+      is_restricted: user.is_restricted || false,
+      is_ultra_restricted: user.is_ultra_restricted || false,
+      is_bot: user.is_bot || false,
+      is_app_user: user.is_app_user || false,
+      tz: user.tz || null,
+      tz_label: user.tz_label || null,
+      tz_offset: user.tz_offset || null,
+      phone: user.profile?.phone || null,
+      skype: user.profile?.skype || null,
+      status_text: user.profile?.status_text || null,
+      status_emoji: user.profile?.status_emoji || null,
+      first_name: user.profile?.first_name || null,
+      last_name: user.profile?.last_name || null,
+      deleted: user.deleted || false,
+      color: user.color || null,
+      who_can_share_contact_card: user.who_can_share_contact_card || null
+    }));
+
+    console.log(`Storing ${usersToStore.length} user profiles in database...`);
+    try {
+      let storedCount = 0;
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < usersToStore.length; i += BATCH_SIZE) {
+        const batchEnd = Math.min(i + BATCH_SIZE, usersToStore.length);
+        const batch = usersToStore.slice(i, batchEnd);
+        await dbQueries.batchUpsertUsers(batch);
+        storedCount += batch.length;
+        console.log(`Progress: ${storedCount}/${usersToStore.length} users stored (${Math.round(storedCount/usersToStore.length * 100)}%)`);
+      }
+      console.log('✓ User profiles successfully stored in database');
+    } catch (error) {
+      console.error('Failed to store user profiles:', error);
+      throw error;
+    }
     
-    // List all channels (now only returns channels where bot is a member)
-    const { channels } = await slackService.listChannels();
-    console.log(`Found ${channels.length} channels where bot is a member`);
+    // List all channels
+    console.log('\n4. Channel Discovery');
+    console.log('Fetching channels from Slack...');
+    let channels;
+    try {
+      const result = await slackService.listChannels();
+      channels = result.channels;
+      console.log(`✓ Found ${channels.length} channels where bot is a member`);
+    } catch (error) {
+      console.error('Failed to fetch channels:', error);
+      throw error;
+    }
     
-    // Process channels in batches with controlled concurrency
+    // Process channels in batches
+    console.log('\n5. Channel Processing');
     const concurrencyLimit = 3;
     let remainingChannels = [...channels];
+    let batchNumber = 0;
     
     while (remainingChannels.length > 0) {
+      batchNumber++;
       const batch = remainingChannels.splice(0, concurrencyLimit);
-      console.log(`Processing batch of ${batch.length} channels (${remainingChannels.length} remaining)`);
+      console.log(`\nProcessing batch ${batchNumber} (${batch.length} channels, ${remainingChannels.length} remaining)`);
       
       // Process channels sequentially within the batch
       for (const channel of batch) {
         try {
+          console.log(`\nStarting analysis of channel: ${channel.name} (${channel.id})`);
           await processChannel(channel, slackService, geminiService, dbQueries);
+          console.log(`✓ Completed analysis of channel: ${channel.name}`);
         } catch (error) {
-          // Only log errors that aren't "not_in_channel"
-          if (error.message !== 'not_in_channel') {
-            console.error(`Error processing channel ${channel.name}:`, error.message);
+          if (error.message === 'not_in_channel') {
+            console.log(`Skipping channel ${channel.name} - bot is not a member`);
+          } else {
+            console.error(`Error processing channel ${channel.name}:`, error);
           }
         }
       }
     }
     
-    console.log('Channel analysis completed');
+    console.log('\n=== Channel Analysis Complete ===');
   } catch (error) {
-    console.error('Error in channel analysis:', error);
+    console.error('\n!!! Analysis Failed !!!');
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      data: error.data,
+      stack: error.stack
+    });
   } finally {
-    // Cleanup
+    console.log('\n=== Cleanup ===');
     if (dbQueries) {
+      console.log('Closing database connection...');
       await dbQueries.close();
+      console.log('✓ Database connection closed');
     }
-    if (slackService) {
-      await slackService.disconnect();
-    }
+    console.log('Disconnecting Slack service...');
+    await slackService.disconnect();
+    console.log('✓ Slack service disconnected');
   }
 }
 
 // Run the analysis
-analyzeChannels();
+analyzeChannels().catch(error => {
+  console.error('Fatal error in analyzeChannels:', error);
+  process.exit(1);
+});

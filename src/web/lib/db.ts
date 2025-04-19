@@ -16,8 +16,31 @@ export async function getOpportunityById(id: string): Promise<Opportunity | null
 }
 
 export async function getOpportunityEvidence(opportunityId: string): Promise<OpportunityEvidence[]> {
-  const stmt = db.prepare('SELECT * FROM opportunity_evidence WHERE opportunity_id = ? ORDER BY timestamp ASC');
-  return stmt.all(opportunityId) as OpportunityEvidence[];
+  const stmt = db.prepare(`
+    SELECT 
+      oe.*,
+      u.display_name,
+      u.real_name,
+      u.avatar_url
+    FROM opportunity_evidence oe
+    LEFT JOIN users u ON oe.author = u.user_id
+    WHERE oe.opportunity_id = ? 
+    ORDER BY oe.timestamp ASC
+  `);
+  const evidence = stmt.all(opportunityId) as (OpportunityEvidence & {
+    display_name: string | null;
+    real_name: string | null;
+    avatar_url: string | null;
+  })[];
+
+  return evidence.map(e => ({
+    ...e,
+    authorProfile: {
+      display_name: e.display_name,
+      real_name: e.real_name,
+      avatar_url: e.avatar_url
+    }
+  }));
 }
 
 export async function getChannelContexts(): Promise<ChannelContext[]> {
@@ -55,23 +78,29 @@ export async function getOpportunitiesByType(): Promise<{ type: string; count: n
 export async function getOpportunityContext(opportunityId: string): Promise<{
   channel: Channel;
   context: ChannelContext;
-  messages: { content: string; author: string; timestamp: string; thread_id: string | null }[];
+  messages: { content: string; author: string; timestamp: string; thread_id: string | null; authorProfile?: { display_name: string | null; real_name: string | null; avatar_url: string | null; } | null; }[];
 } | null> {
   const stmt = db.prepare(`
     SELECT 
       c.*,
       cc.*,
-      json_group_array(json_object(
-        'content', m.content,
-        'author', m.user_id,
-        'timestamp', m.timestamp,
-        'thread_id', m.thread_ts
-      )) as messages
+      json_group_array(
+        json_object(
+          'content', m.content,
+          'author', m.user_id,
+          'timestamp', m.timestamp,
+          'thread_id', m.thread_ts,
+          'display_name', u.display_name,
+          'real_name', u.real_name,
+          'avatar_url', u.avatar_url
+        )
+      ) as messages
     FROM opportunities o
     JOIN channel_contexts cc ON o.context_id = cc.context_id
     JOIN channels c ON cc.channel_id = c.channel_id
     LEFT JOIN messages m ON m.channel_id = c.channel_id 
       AND m.timestamp BETWEEN cc.start_date AND cc.end_date
+    LEFT JOIN users u ON m.user_id = u.user_id
     WHERE o.opportunity_id = ?
     GROUP BY c.channel_id
   `);
@@ -79,11 +108,24 @@ export async function getOpportunityContext(opportunityId: string): Promise<{
   const result = stmt.get(opportunityId);
   if (!result) return null;
 
+  const messages = JSON.parse(result.messages).map((m: any) => ({
+    content: m.content,
+    author: m.author,
+    timestamp: m.timestamp,
+    thread_id: m.thread_id,
+    authorProfile: {
+      display_name: m.display_name,
+      real_name: m.real_name,
+      avatar_url: m.avatar_url
+    }
+  }));
+
   return {
     channel: {
       channel_id: result.channel_id,
       name: result.name,
       type: result.type,
+      team_id: result.team_id,
       created_at: result.created_at,
       last_analyzed: result.last_analyzed,
       member_count: result.member_count,
@@ -101,6 +143,6 @@ export async function getOpportunityContext(opportunityId: string): Promise<{
       window_type: result.window_type,
       context_data: result.context_data
     },
-    messages: JSON.parse(result.messages)
+    messages
   };
 } 

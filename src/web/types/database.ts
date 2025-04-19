@@ -22,7 +22,12 @@ export interface OpportunityEvidence {
   author: string;
   timestamp: string;
   content: string;
-  relevance_note: string;
+  relevance_note: string | null;
+  authorProfile?: {
+    display_name: string | null;
+    real_name: string | null;
+    avatar_url: string | null;
+  } | null;
 }
 
 export interface ChannelContext {
@@ -39,9 +44,10 @@ export interface Channel {
   channel_id: string;
   name: string;
   type: string;
+  team_id: string;
   created_at: string;
-  last_analyzed: string | null;
-  member_count: number | null;
+  last_analyzed: string;
+  member_count: number;
   message_count: number;
   link_count: number;
   mention_count: number;

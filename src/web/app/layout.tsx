@@ -7,7 +7,7 @@ import { ThemeProvider } from "../components/theme-provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Opportunities Dashboard",
+  title: "OppVibe - Opportunity Insights",
   description: "View and manage detected opportunities from Slack channels",
 };
 

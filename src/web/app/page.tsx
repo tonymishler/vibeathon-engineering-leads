@@ -27,7 +27,7 @@ interface Channel {
   name: string;
 }
 
-export default function DashboardPage() {
+export default function OppVibePage() {
   const router = useRouter();
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [channelStats, setChannelStats] = useState<ChannelStat[]>([]);
@@ -63,11 +63,11 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
-        <h1 className="text-2xl font-semibold mb-6">Opportunities Dashboard</h1>
+      <div className="container mx-auto p-6 bg-gray-50 min-h-screen">
+        <h1 className="text-2xl font-semibold mb-6">OppVibe</h1>
         <div className="space-y-6">
           {/* Loading states */}
-          <Card>
+          <Card className="bg-white">
             <CardHeader>
               <CardTitle>Opportunities by Channel</CardTitle>
             </CardHeader>
@@ -78,7 +78,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-white">
             <CardHeader>
               <CardTitle>Recent Opportunities</CardTitle>
             </CardHeader>
@@ -109,12 +109,12 @@ export default function DashboardPage() {
   }));
 
   return (
-    <div className="container mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-6">Opportunities Dashboard</h1>
+    <div className="container mx-auto p-6 bg-gray-50 min-h-screen">
+      <h1 className="text-2xl font-semibold mb-6">OppVibe</h1>
       
       <div className="space-y-6">
         {/* Pie Chart */}
-        <Card>
+        <Card className="bg-white">
           <CardHeader>
             <CardTitle>Opportunities by Channel</CardTitle>
           </CardHeader>
@@ -132,7 +132,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Recent Opportunities */}
-        <Card>
+        <Card className="bg-white">
           <CardHeader>
             <CardTitle>Recent Opportunities</CardTitle>
           </CardHeader>

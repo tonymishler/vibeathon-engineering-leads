@@ -10,6 +10,11 @@ interface Message {
   content: string;
   author: string;
   timestamp: string;
+  authorProfile?: {
+    display_name: string | null;
+    real_name: string | null;
+    avatar_url: string | null;
+  } | null;
 }
 
 interface Opportunity {
@@ -33,15 +38,23 @@ interface Evidence {
   timestamp: string;
   content: string;
   relevance_note: string | null;
+  message_id: string;
+  authorProfile?: {
+    display_name: string | null;
+    real_name: string | null;
+    avatar_url: string | null;
+  } | null;
 }
 
 interface Context {
   channel: {
+    channel_id: string;
     name: string;
     member_count: number;
     message_count: number;
     link_count: number;
     mention_count: number;
+    team_id: string;
   };
   context: {
     start_date: string;
@@ -135,9 +148,23 @@ export default function OpportunityPage() {
         </div>
 
         {context && (
-          <p className="text-gray-600 text-sm mb-8">
-            Detected in #{context.channel.name} • {context.channel.member_count} members • {context.channel.message_count} messages
-          </p>
+          <div className="flex items-center gap-2 text-gray-600 text-sm mb-8">
+            <a 
+              href={`https://slack.com/app_redirect?channel=${context.channel.channel_id}`} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full hover:bg-blue-100 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M12.186 8.672L18.743 2.115a1 1 0 00-1.414-1.414l-6.557 6.557L4.215.701a1 1 0 10-1.414 1.414l6.557 6.557L2.801 15.229a1 1 0 101.414 1.414l6.557-6.557 6.557 6.557a1 1 0 001.414-1.414l-6.557-6.557z"/>
+              </svg>
+              #{context.channel.name}
+            </a>
+            <span className="text-gray-400">•</span>
+            <span>{context.channel.member_count} members</span>
+            <span className="text-gray-400">•</span>
+            <span>{context.channel.message_count} messages</span>
+          </div>
         )}
 
         <div className="space-y-8">
@@ -201,10 +228,15 @@ export default function OpportunityPage() {
                     {evidence.map((msg) => (
                       <div key={msg.evidence_id} className="bg-white rounded p-4">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium">{msg.author}</span>
-                          <span className="text-sm text-gray-500">
+                          <span className="font-medium">{msg.authorProfile?.display_name || msg.authorProfile?.real_name || msg.author}</span>
+                          <a 
+                            href={`https://slack.com/app_redirect?channel=${context?.channel.channel_id}&message_ts=${msg.message_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-gray-500 hover:text-blue-600"
+                          >
                             {format(new Date(msg.timestamp), 'MMM d, h:mm a')}
-                          </span>
+                          </a>
                         </div>
                         <p className="text-gray-600 mt-1">{msg.content}</p>
                         {msg.relevance_note && (
@@ -214,6 +246,57 @@ export default function OpportunityPage() {
                     ))}
                   </div>
                 </div>
+              </div>
+            </section>
+          )}
+
+          {evidence && evidence.length > 0 && (
+            <section className="bg-white rounded-lg p-6 shadow-sm">
+              <h2 className="text-lg font-semibold mb-4">Supporting Evidence</h2>
+              <div className="space-y-6">
+                {evidence.map((item) => (
+                  <div key={item.evidence_id} className="border-b border-gray-100 last:border-0 pb-6 last:pb-0">
+                    <div className="flex items-start gap-3 mb-2">
+                      {item.authorProfile?.avatar_url ? (
+                        <img 
+                          src={item.authorProfile.avatar_url} 
+                          alt={item.authorProfile.display_name || item.authorProfile.real_name || 'User'} 
+                          className="w-8 h-8 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+                          <span className="text-gray-500 text-sm">?</span>
+                        </div>
+                      )}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <a 
+                            href={`https://slack.com/app_redirect?team=${context?.channel.team_id}&user=${item.author}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium text-gray-900 hover:underline"
+                          >
+                            {item.authorProfile?.display_name || item.authorProfile?.real_name || item.author}
+                          </a>
+                          <a 
+                            href={`https://slack.com/app_redirect?channel=${context?.channel.channel_id}&message_ts=${item.message_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-gray-500 hover:underline"
+                          >
+                            {format(new Date(item.timestamp), 'MMM d, yyyy h:mm a')}
+                          </a>
+                        </div>
+                        <p className="text-gray-600 mt-1">{item.content}</p>
+                        {item.relevance_note && (
+                          <p className="text-sm text-gray-500 mt-2 italic">
+                            {item.relevance_note}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </section>
           )}

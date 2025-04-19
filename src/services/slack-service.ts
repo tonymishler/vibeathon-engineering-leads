@@ -23,29 +23,90 @@ export class SlackService {
   private userCache: Map<string, any> = new Map();
 
   async initialize() {
-    if (!this.isInitialized) {
-      const projectRoot = process.cwd();
-      const serverPath = path.join(projectRoot, 'node_modules', '@modelcontextprotocol', 'server-slack', 'dist', 'index.js');
-      
-      this.transport = new StdioClientTransport({
-        command: "node",
-        args: [serverPath],
-        env: {
-          SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN || '',
-          SLACK_TEAM_ID: process.env.SLACK_TEAM_ID || '',
-          NODE_ENV: "development",
-          PATH: process.env.PATH || ''
-        }
-      });
-
-      this.client = new Client({
-        name: "vibeathon-slack-client",
-        version: "1.0.0"
-      });
-
-      await this.client.connect(this.transport);
-      this.isInitialized = true;
+    console.log('SlackService: Starting initialization...');
+    if (this.isInitialized) {
+      console.log('SlackService: Already initialized, skipping');
+      return;
     }
+
+    console.log('SlackService: Creating transport...');
+    const projectRoot = process.cwd();
+    const serverPath = path.join(projectRoot, 'node_modules', '@modelcontextprotocol', 'server-slack', 'dist', 'index.js');
+    
+    console.log('SlackService: Using server path:', serverPath);
+    const transport = new StdioClientTransport({
+      command: "node",
+      args: [serverPath],
+      env: {
+        SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN || '',
+        SLACK_TEAM_ID: process.env.SLACK_TEAM_ID || '',
+        NODE_ENV: process.env.NODE_ENV || 'development',
+        PATH: process.env.PATH || ''
+      }
+    });
+    
+    this.transport = transport;
+    console.log('SlackService: Creating client...');
+    this.client = new Client({
+      name: "vibeathon-slack-client",
+      version: "1.0.0"
+    });
+
+    console.log('SlackService: Connecting client to transport...');
+    await this.client.connect(this.transport);
+    this.isInitialized = true;
+    console.log('SlackService: Initialization complete');
+  }
+
+  async getAllUsers(options: { limit?: number } = {}): Promise<any[]> {
+    console.log('SlackService: Starting getAllUsers...');
+    await this.initialize();
+    const users: any[] = [];
+    let cursor: string | undefined;
+    let pageCount = 0;
+
+    do {
+      pageCount++;
+      console.log(`SlackService: Fetching users page ${pageCount}${cursor ? ' with cursor' : ''}...`);
+      try {
+        const result = await this.client!.callTool({
+          name: "slack_get_users",
+          arguments: {
+            cursor,
+            limit: options.limit || 200
+          }
+        });
+
+        console.log(`SlackService: Processing response from page ${pageCount}...`);
+        if (Array.isArray(result?.content) && result.content.length > 0 && result.content[0]?.text) {
+          const response = JSON.parse(result.content[0].text);
+          if (pageCount === 1) {
+            console.log('SlackService: Raw response payload for first user:', JSON.stringify(response.members[0], null, 2));
+          }
+          if (response.ok && response.members) {
+            const newUsers = response.members;
+            console.log(`SlackService: Found ${newUsers.length} users on page ${pageCount}`);
+            users.push(...newUsers);
+            cursor = response.response_metadata?.next_cursor;
+            if (cursor) {
+              console.log('SlackService: More pages available, will continue fetching');
+            }
+          } else {
+            console.log('SlackService: Response was not OK or no members found', response.error || 'Unknown error');
+            break;
+          }
+        } else {
+          console.log('SlackService: Invalid response format', result);
+          break;
+        }
+      } catch (error) {
+        console.error(`SlackService: Error fetching users on page ${pageCount}:`, error);
+        break;
+      }
+    } while (cursor);
+
+    console.log(`SlackService: getAllUsers complete. Total users found: ${users.length}`);
+    return users;
   }
 
   async listChannels(options: { limit?: number; maxTotal?: number } = {}): Promise<{

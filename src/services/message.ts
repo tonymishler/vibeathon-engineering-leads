@@ -3,17 +3,17 @@ export class Message {
   text: string;
   timestamp: Date;
   channelId: string;
-  author?: string;
+  userId?: string;
   threadId?: string;
   reactions?: any[];
   hasAttachments?: boolean;
 
-  constructor(id: string, text: string, timestamp: Date, channelId: string, author?: string, threadId?: string, reactions?: any[], hasAttachments?: boolean) {
+  constructor(id: string, text: string, timestamp: Date, channelId: string, userId?: string, threadId?: string, reactions?: any[], hasAttachments?: boolean) {
     this.id = id;
     this.text = text;
     this.timestamp = timestamp;
     this.channelId = channelId;
-    this.author = author;
+    this.userId = userId;
     this.threadId = threadId;
     this.reactions = reactions;
     this.hasAttachments = hasAttachments;
@@ -27,7 +27,7 @@ export class Message {
     return {
       message_id: this.id,
       channel_id: this.channelId,
-      user_id: this.author || 'unknown',
+      user_id: this.userId || 'unknown',
       content: this.text,
       timestamp: this.timestamp.toISOString(),
       thread_ts: this.threadId,
