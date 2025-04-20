@@ -16,14 +16,16 @@ interface PieChartProps {
 }
 
 const COLORS = [
-  '#3B82F6', // blue-500
-  '#10B981', // emerald-500
-  '#6366F1', // indigo-500
-  '#F59E0B', // amber-500
-  '#EC4899', // pink-500
-  '#8B5CF6', // violet-500
-  '#14B8A6', // teal-500
-  '#F97316', // orange-500
+  '#3498db', // Soft blue
+  '#2ecc71', // Mint green
+  '#9b59b6', // Muted purple
+  '#e67e22', // Soft orange
+  '#1abc9c', // Seafoam
+  '#34495e', // Dark slate
+  '#f1c40f', // Muted yellow
+  '#16a085', // Deep teal
+  '#8e44ad', // Deep purple
+  '#d35400', // Burnt orange
 ];
 
 export function PieChartComponent({ data, onSliceClick, title }: PieChartProps) {

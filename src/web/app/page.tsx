@@ -5,10 +5,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { PieChartComponent } from "@/components/pie-chart";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Flyout } from "@/components/ui/flyout";
-import { HomeIcon, ChevronRightIcon } from '@heroicons/react/20/solid';
+import dynamic from 'next/dynamic';
+import { OpportunitiesTable } from "@/components/OpportunitiesTable";
+import { HomeIcon as HomeIconOutline, ChevronRightIcon as ChevronRightIconOutline } from '@heroicons/react/24/outline';
+import type { ReactElement, ComponentProps } from 'react';
+
+const HomeIcon = HomeIconOutline as React.FC<React.SVGProps<SVGSVGElement>>;
+const ChevronRightIcon = ChevronRightIconOutline as React.FC<React.SVGProps<SVGSVGElement>>;
 
 interface Opportunity {
   opportunity_id: string;
@@ -67,6 +73,86 @@ export default function OppVibePage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [chartState, setChartState] = useState<ChartState>({ type: 'channel' });
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [scopeFilter, setScopeFilter] = useState<string>('all');
+  const [sortConfig, setSortConfig] = useState<{
+    key: keyof Opportunity;
+    direction: 'asc' | 'desc';
+  } | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  const uniqueTypes = useMemo(() => 
+    ['all', ...new Set(opportunities.map(opp => opp.type))],
+    [opportunities]
+  );
+  
+  const uniqueScopes = useMemo(() => 
+    ['all', ...new Set(opportunities.map(opp => opp.scope))],
+    [opportunities]
+  );
+
+  const sortData = useCallback((data: Opportunity[]) => {
+    if (!sortConfig) return data;
+
+    return [...data].sort((a, b) => {
+      if (a[sortConfig.key] < b[sortConfig.key]) {
+        return sortConfig.direction === 'asc' ? -1 : 1;
+      }
+      if (a[sortConfig.key] > b[sortConfig.key]) {
+        return sortConfig.direction === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+  }, [sortConfig]);
+
+  const requestSort = (key: keyof Opportunity) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const filteredAndSortedOpportunities = useMemo(() => {
+    let filtered = opportunities;
+
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter(opp => opp.type === typeFilter);
+    }
+
+    if (scopeFilter !== 'all') {
+      filtered = filtered.filter(opp => opp.scope === scopeFilter);
+    }
+
+    if (chartState.filter) {
+      if (chartState.filter.channel) {
+        filtered = filtered.filter(opp => {
+          const channelStat = channelStats.find(stat => 
+            stat.channel_id === chartState.filter?.channel && 
+            stat.opportunity_ids.includes(opp.opportunity_id)
+          );
+          return channelStat !== undefined;
+        });
+      }
+      if (chartState.filter.type) {
+        filtered = filtered.filter(opp => opp.type === chartState.filter?.type);
+      }
+      if (chartState.filter.scope) {
+        filtered = filtered.filter(opp => opp.scope === chartState.filter?.scope);
+      }
+    }
+
+    return sortData(filtered);
+  }, [opportunities, typeFilter, scopeFilter, chartState.filter, channelStats, sortData]);
+
+  // Calculate pagination
+  const paginatedOpportunities = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredAndSortedOpportunities.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredAndSortedOpportunities, currentPage]);
+
+  const totalPages = Math.ceil(filteredAndSortedOpportunities.length / itemsPerPage);
 
   useEffect(() => {
     async function fetchData() {
@@ -91,20 +177,7 @@ export default function OppVibePage() {
   }, []);
 
   const handlePreviewClick = async (opportunityId: string) => {
-    try {
-      const response = await fetch(`/api/opportunities/${opportunityId}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch opportunity details');
-      }
-      const data = await response.json();
-      setPreviewData({
-        opportunity: data.opportunity,
-        channel: data.context?.channel
-      });
-      setPreviewOpen(true);
-    } catch (err) {
-      console.error('Error:', err);
-    }
+    router.push(`/opportunities/${opportunityId}`);
   };
 
   // Prepare data for pie chart based on current state
@@ -277,46 +350,30 @@ export default function OppVibePage() {
     }
   };
 
+  // Create channel name mapping
+  const channelMap = channels?.length ? new Map(channels.map(c => [c.channel_id, c.name])) : new Map();
+
   if (loading) {
     return (
-      <div className="container mx-auto p-6 bg-gray-50 min-h-screen">
-        <h1 className="text-2xl font-semibold mb-6">OppVibe</h1>
-        <div className="space-y-6">
-          {/* Loading states */}
-          <Card className="bg-white">
-            <CardHeader>
-              <CardTitle>Opportunities by Channel</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[300px] flex items-center justify-center">
-                <div className="w-[200px] h-[200px] rounded-full bg-gray-200 animate-pulse" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white">
-            <CardHeader>
-              <CardTitle>Recent Opportunities</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="animate-pulse space-y-4">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="h-12 bg-gray-200 rounded" />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
       </div>
     );
   }
 
   if (error) {
-    return <div className="container mx-auto p-6 text-red-500">Error: {error}</div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <div className="text-red-600 text-xl mb-4">{error}</div>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
-
-  // Create channel name mapping
-  const channelMap = new Map(channels.map(c => [c.channel_id, c.name]));
 
   function getConfidenceColor(score: number) {
     if (score >= 0.7) return 'bg-green-100 text-green-800';
@@ -351,125 +408,198 @@ export default function OppVibePage() {
   }
 
   return (
-    <div className="container mx-auto p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-semibold mb-6">OppVibe</h1>
+    <div className="min-h-screen bg-gray-50">
+
       
-      <div className="space-y-6">
-        {/* Pie Chart Card */}
-        <Card className="bg-white">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Opportunities Analysis</CardTitle>
-              
-              {/* Breadcrumb Navigation */}
-              <nav className="flex items-center space-x-2 text-sm">
-                <button
-                  onClick={() => handleBreadcrumbClick('root')}
-                  className={`flex items-center ${chartState.type === 'channel' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
-                >
-                  <HomeIcon className="h-4 w-4 mr-1" />
-                  Channels
-                </button>
+      <div className="container mx-auto p-6 bg-gray-50 min-h-screen">
+        
+        <div className="space-y-6">
+          {/* Pie Chart Card */}
+          <Card className="bg-white">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Opportunities Analysis</CardTitle>
                 
-                {chartState.filter?.channel && (
-                  <>
-                    <ChevronRightIcon className="h-4 w-4 text-gray-500" />
-                    <button
-                      onClick={() => handleBreadcrumbClick('channel')}
-                      className={`${chartState.type === 'type' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
-                    >
-                      {channelMap.get(chartState.filter.channel)}
-                    </button>
-                  </>
-                )}
-                
-                {chartState.filter?.type && (
-                  <>
-                    <ChevronRightIcon className="h-4 w-4 text-gray-500" />
-                    <button
-                      onClick={() => handleBreadcrumbClick('type')}
-                      className={`${chartState.type === 'scope' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
-                    >
-                      {chartState.filter.type}
-                    </button>
-                  </>
-                )}
+                {/* Breadcrumb Navigation */}
+                <nav className="flex items-center space-x-2 text-sm">
+                  <button
+                    onClick={() => handleBreadcrumbClick('root')}
+                    className={`flex items-center ${chartState.type === 'channel' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
+                  >
+                    <HomeIcon className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
+                    Channels
+                  </button>
+                  
+                  {chartState.filter?.channel && (
+                    <>
+                      <ChevronRightIcon className="h-5 w-5 flex-shrink-0 text-gray-400" aria-hidden="true" />
+                      <button
+                        onClick={() => handleBreadcrumbClick('channel')}
+                        className={`${chartState.type === 'type' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
+                      >
+                        {channelMap.get(chartState.filter.channel)}
+                      </button>
+                    </>
+                  )}
+                  
+                  {chartState.filter?.type && (
+                    <>
+                      <ChevronRightIcon className="h-5 w-5 flex-shrink-0 text-gray-400" aria-hidden="true" />
+                      <button
+                        onClick={() => handleBreadcrumbClick('type')}
+                        className={`${chartState.type === 'scope' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
+                      >
+                        {chartState.filter.type}
+                      </button>
+                    </>
+                  )}
 
-                {chartState.filter?.scope && (
-                  <>
-                    <ChevronRightIcon className="h-4 w-4 text-gray-500" />
-                    <button
-                      onClick={() => handleBreadcrumbClick('scope')}
-                      className={`${chartState.type === 'effort' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
-                    >
-                      {chartState.filter.scope}
-                    </button>
-                  </>
-                )}
+                  {chartState.filter?.scope && (
+                    <>
+                      <ChevronRightIcon className="h-5 w-5 flex-shrink-0 text-gray-400" aria-hidden="true" />
+                      <button
+                        onClick={() => handleBreadcrumbClick('scope')}
+                        className={`${chartState.type === 'effort' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
+                      >
+                        {chartState.filter.scope}
+                      </button>
+                    </>
+                  )}
 
-                {chartState.filter?.effort && (
-                  <>
-                    <ChevronRightIcon className="h-4 w-4 text-gray-500" />
-                    <button
-                      onClick={() => handleBreadcrumbClick('effort')}
-                      className={`${chartState.type === 'value' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
-                    >
-                      {chartState.filter.effort}
-                    </button>
-                  </>
+                  {chartState.filter?.effort && (
+                    <>
+                      <ChevronRightIcon className="h-5 w-5 flex-shrink-0 text-gray-400" aria-hidden="true" />
+                      <button
+                        onClick={() => handleBreadcrumbClick('effort')}
+                        className={`${chartState.type === 'value' ? 'text-gray-600' : 'text-blue-600 hover:text-blue-800'}`}
+                      >
+                        {chartState.filter.effort}
+                      </button>
+                    </>
+                  )}
+                </nav>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[300px]">
+                {getPieData().length > 0 ? (
+                  <PieChartComponent 
+                    data={getPieData()} 
+                    onSliceClick={handleChartClick}
+                    title={getChartTitle()}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-500">
+                    No data available
+                  </div>
                 )}
-              </nav>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              {getPieData().length > 0 ? (
-                <PieChartComponent 
-                  data={getPieData()} 
-                  onSliceClick={handleChartClick}
-                  title={getChartTitle()}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-500">
-                  No data available
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Recent Opportunities Card */}
+          <Card className="bg-white">
+            <CardHeader>
+              <CardTitle>Recent Opportunities</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4 mb-4">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="type-filter" className="sr-only">Filter by type</label>
+                  <select
+                    id="type-filter"
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value)}
+                    className="block w-32 rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-600 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-white"
+                    aria-label="Filter opportunities by type"
+                  >
+                    {uniqueTypes.map(type => (
+                      <option key={type} value={type} className="text-gray-900">
+                        {type === 'all' ? 'All types' : type}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                <div className="flex items-center gap-2">
+                  <label htmlFor="scope-filter" className="sr-only">Filter by scope</label>
+                  <select
+                    id="scope-filter"
+                    value={scopeFilter}
+                    onChange={(e) => setScopeFilter(e.target.value)}
+                    className="block w-32 rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-600 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-white"
+                    aria-label="Filter opportunities by scope"
+                  >
+                    {uniqueScopes.map(scope => (
+                      <option key={scope} value={scope} className="text-gray-900">
+                        {scope === 'all' ? 'All scopes' : scope}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-        {/* Recent Opportunities Card - Now filtered based on chart state */}
-        <Card className="bg-white">
-          <CardHeader>
-            <CardTitle>Recent Opportunities</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Confidence</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Detected</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {opportunities
-                  .filter(opp => {
-                    if (!chartState.filter) return true;
-                    if (chartState.filter.channel) {
-                      const channelStat = channelStats.find(stat => 
-                        stat.channel_id === chartState.filter?.channel && 
-                        stat.opportunity_ids.includes(opp.opportunity_id)
-                      );
-                      if (!channelStat) return false;
-                    }
-                    if (chartState.filter.type && opp.type !== chartState.filter.type) return false;
-                    if (chartState.filter.scope && opp.scope !== chartState.filter.scope) return false;
-                    return true;
-                  })
-                  .map((opportunity) => (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead 
+                      onClick={() => requestSort('title')}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
+                      Title
+                      {sortConfig?.key === 'title' && (
+                        <span className="ml-2">
+                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </TableHead>
+                    <TableHead 
+                      onClick={() => requestSort('type')}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
+                      Type
+                      {sortConfig?.key === 'type' && (
+                        <span className="ml-2">
+                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </TableHead>
+                    <TableHead 
+                      onClick={() => requestSort('confidence_score')}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
+                      Confidence
+                      {sortConfig?.key === 'confidence_score' && (
+                        <span className="ml-2">
+                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </TableHead>
+                    <TableHead 
+                      onClick={() => requestSort('scope')}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
+                      Scope
+                      {sortConfig?.key === 'scope' && (
+                        <span className="ml-2">
+                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </TableHead>
+                    <TableHead 
+                      onClick={() => requestSort('detected_at')}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
+                      Detected
+                      {sortConfig?.key === 'detected_at' && (
+                        <span className="ml-2">
+                          {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedOpportunities.map((opportunity) => (
                     <TableRow 
                       key={opportunity.opportunity_id}
                       onClick={() => handlePreviewClick(opportunity.opportunity_id)}
@@ -495,75 +625,152 @@ export default function OppVibePage() {
                       </TableCell>
                     </TableRow>
                   ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
+                </TableBody>
+              </Table>
 
-      <Flyout
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        title={previewData?.opportunity.title}
-      >
-        {previewData && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary" className="bg-gray-100 text-gray-800">
-                {previewData.opportunity.type}
-              </Badge>
-              <Badge variant="secondary" className="bg-gray-100 text-gray-800">
-                {previewData.opportunity.scope}
-              </Badge>
-              <Badge variant="secondary" className={getConfidenceColor(previewData.opportunity.confidence_score)}>
-                Confidence: {(previewData.opportunity.confidence_score * 100).toFixed(0)}%
-              </Badge>
-              <Badge variant="secondary" className={getEstimateColor(previewData.opportunity.effort_estimate)}>
-                Effort: {previewData.opportunity.effort_estimate}
-              </Badge>
-              <Badge variant="secondary" className={getValueColor(previewData.opportunity.potential_value)}>
-                Value: {previewData.opportunity.potential_value}
-              </Badge>
-            </div>
+              {/* Pagination Controls */}
+              <div className="mt-4 flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+                <div className="flex flex-1 justify-between sm:hidden">
+                  <button
+                    onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
+                    disabled={currentPage === 1}
+                    className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
+                    disabled={currentPage === totalPages}
+                    className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+                <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm text-gray-700">
+                      Showing <span className="font-medium">{Math.min((currentPage - 1) * itemsPerPage + 1, filteredAndSortedOpportunities.length)}</span> to{' '}
+                      <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredAndSortedOpportunities.length)}</span> of{' '}
+                      <span className="font-medium">{filteredAndSortedOpportunities.length}</span> results
+                    </p>
+                  </div>
+                  <div>
+                    <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                      <button
+                        onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
+                        disabled={currentPage === 1}
+                        className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                      >
+                        <span className="sr-only">Previous</span>
+                        <ChevronRightIcon className="h-5 w-5 rotate-180" aria-hidden="true" />
+                      </button>
+                      {/* Page Numbers */}
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNumber;
+                        if (totalPages <= 5) {
+                          pageNumber = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNumber = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNumber = totalPages - 4 + i;
+                        } else {
+                          pageNumber = currentPage - 2 + i;
+                        }
+                        
+                        return (
+                          <button
+                            key={pageNumber}
+                            onClick={() => setCurrentPage(pageNumber)}
+                            className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${
+                              currentPage === pageNumber
+                                ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+                                : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-offset-0'
+                            }`}
+                          >
+                            {pageNumber}
+                          </button>
+                        );
+                      })}
+                      <button
+                        onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
+                        disabled={currentPage === totalPages}
+                        className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                      >
+                        <span className="sr-only">Next</span>
+                        <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
+                      </button>
+                    </nav>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-            {previewData.channel && (
-              <div className="flex items-center gap-2 text-gray-600 text-sm">
-                <a 
-                  href={`https://slack.com/app_redirect?channel=${previewData.channel.channel_id}`} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full hover:bg-blue-100 transition-colors"
-                  onClick={(e) => e.stopPropagation()}
+        <Flyout
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          title={previewData?.opportunity.title}
+        >
+          {previewData && (
+            <div className="space-y-6">
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary" className="bg-gray-100 text-gray-800">
+                  {previewData.opportunity.type}
+                </Badge>
+                <Badge variant="secondary" className="bg-gray-100 text-gray-800">
+                  {previewData.opportunity.scope}
+                </Badge>
+                <Badge variant="secondary" className={getConfidenceColor(previewData.opportunity.confidence_score)}>
+                  Confidence: {(previewData.opportunity.confidence_score * 100).toFixed(0)}%
+                </Badge>
+                <Badge variant="secondary" className={getEstimateColor(previewData.opportunity.effort_estimate)}>
+                  Effort: {previewData.opportunity.effort_estimate}
+                </Badge>
+                <Badge variant="secondary" className={getValueColor(previewData.opportunity.potential_value)}>
+                  Value: {previewData.opportunity.potential_value}
+                </Badge>
+              </div>
+
+              {previewData.channel && (
+                <div className="flex items-center gap-2 text-gray-600 text-sm">
+                  <a 
+                    href={`https://slack.com/app_redirect?channel=${previewData.channel.channel_id}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full hover:bg-blue-100 transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M12.186 8.672L18.743 2.115a1 1 0 00-1.414-1.414l-6.557 6.557L4.215.701a1 1 0 10-1.414 1.414l6.557 6.557L2.801 15.229a1 1 0 101.414 1.414l6.557-6.557 6.557 6.557a1 1 0 001.414-1.414l-6.557-6.557z"/>
+                    </svg>
+                    #{previewData.channel.name}
+                  </a>
+                </div>
+              )}
+
+              <div>
+                <h3 className="font-medium text-gray-900 mb-2">Description</h3>
+                <p className="text-gray-600">{previewData.opportunity.description}</p>
+              </div>
+
+              <div>
+                <h3 className="font-medium text-gray-900 mb-2">Implicit Insights</h3>
+                <p className="text-gray-600">{previewData.opportunity.implicit_insights}</p>
+              </div>
+
+              <div className="border-t pt-4 mt-6">
+                <a
+                  href={`/opportunities/${previewData.opportunity.opportunity_id}`}
+                  className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                 >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M12.186 8.672L18.743 2.115a1 1 0 00-1.414-1.414l-6.557 6.557L4.215.701a1 1 0 10-1.414 1.414l6.557 6.557L2.801 15.229a1 1 0 101.414 1.414l6.557-6.557 6.557 6.557a1 1 0 001.414-1.414l-6.557-6.557z"/>
-                  </svg>
-                  #{previewData.channel.name}
+                  View Full Details
                 </a>
               </div>
-            )}
-
-            <div>
-              <h3 className="font-medium text-gray-900 mb-2">Description</h3>
-              <p className="text-gray-600">{previewData.opportunity.description}</p>
             </div>
-
-            <div>
-              <h3 className="font-medium text-gray-900 mb-2">Implicit Insights</h3>
-              <p className="text-gray-600">{previewData.opportunity.implicit_insights}</p>
-            </div>
-
-            <div className="border-t pt-4 mt-6">
-              <a
-                href={`/opportunities/${previewData.opportunity.opportunity_id}`}
-                className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-              >
-                View Full Details
-              </a>
-            </div>
-          </div>
-        )}
-      </Flyout>
+          )}
+        </Flyout>
+      </div>
     </div>
   );
 } 
