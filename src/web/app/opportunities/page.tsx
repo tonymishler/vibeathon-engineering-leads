@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import React, { useState, useEffect } from 'react';
+import { OpportunitiesTable } from '@/components/OpportunitiesTable';
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
-import { getOpportunities } from "@/lib/db";
 import { format } from "date-fns";
-import Link from "next/link";
-import { Flyout } from "@/components/ui/flyout";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Opportunity {
   opportunity_id: string;
@@ -24,35 +22,27 @@ interface Opportunity {
   last_updated: string;
 }
 
-interface PreviewData {
-  opportunity: Opportunity;
-  channel?: {
-    name: string;
-    channel_id: string;
-    team_id: string;
-    message_count: number;
-  };
-}
-
 export default function OpportunitiesPage() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  const router = useRouter();
 
   useEffect(() => {
     async function fetchOpportunities() {
       try {
         const response = await fetch('/api/opportunities');
         if (!response.ok) {
-          throw new Error('Failed to fetch opportunities');
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
-        setOpportunities(data);
+        setOpportunities(data.opportunities || []);
       } catch (err) {
-        console.error('Error:', err);
-        setError(err instanceof Error ? err.message : 'An error occurred');
+        console.error('Error fetching opportunities:', err);
+        setError('Failed to load opportunities. Please try again later.');
+        setOpportunities([]);
       } finally {
         setLoading(false);
       }
@@ -61,173 +51,213 @@ export default function OpportunitiesPage() {
     fetchOpportunities();
   }, []);
 
-  const handlePreviewClick = async (opportunityId: string) => {
-    try {
-      const response = await fetch(`/api/opportunities/${opportunityId}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch opportunity details');
-      }
-      const data = await response.json();
-      setPreviewData({
-        opportunity: data.opportunity,
-        channel: data.context?.channel
-      });
-      setPreviewOpen(true);
-    } catch (err) {
-      console.error('Error:', err);
-    }
+  const handleOpportunityClick = (opportunityId: string) => {
+    router.push(`/opportunities/${opportunityId}`);
   };
 
-  function getConfidenceColor(score: number) {
-    if (score >= 0.7) return 'bg-green-100 text-green-800';
-    if (score >= 0.4) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
-  }
-
-  function getEstimateColor(estimate: string) {
-    switch (estimate.toLowerCase()) {
-      case 'small':
-        return 'bg-green-100 text-green-800';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'large':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  }
-
-  function getValueColor(value: string) {
-    switch (value.toLowerCase()) {
-      case 'high':
-        return 'bg-green-100 text-green-800';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'low':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  }
+  // Calculate pagination
+  const totalPages = Math.ceil(opportunities.length / itemsPerPage);
+  const paginatedOpportunities = opportunities.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   if (loading) {
     return (
-      <div className="container mx-auto py-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/4" />
-          <div className="space-y-3">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-24 bg-gray-200 rounded" />
-            ))}
-          </div>
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="container mx-auto py-6">
-        <div className="text-red-500">{error}</div>
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <div className="text-red-600 text-xl mb-4">{error}</div>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+        >
+          Retry
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-6">
-      <h1 className="text-2xl font-semibold mb-6">Opportunities</h1>
-      
-      <div className="space-y-4">
-        {opportunities.map((opportunity) => (
-          <div
-            key={opportunity.opportunity_id}
-            className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-            onClick={() => handlePreviewClick(opportunity.opportunity_id)}
-          >
-            <div className="flex items-start justify-between">
+    <div className="min-h-screen bg-gray-50">
+      <div className="container mx-auto py-6">
+        <h1 className="text-2xl font-semibold mb-6">Opportunities</h1>
+        
+        <div className="flex gap-4 mb-6">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search opportunities..."
+              className="w-96 rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-black/5"
+            />
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <label htmlFor="type-filter" className="sr-only">Filter by type</label>
+            <select
+              id="type-filter"
+              className="block rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-600 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-black/5"
+              aria-label="Filter opportunities by type"
+            >
+              <option>All types</option>
+            </select>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <label htmlFor="scope-filter" className="sr-only">Filter by scope</label>
+            <select
+              id="scope-filter"
+              className="block rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-600 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-black/5"
+              aria-label="Filter opportunities by scope"
+            >
+              <option>All scopes</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Title
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Type
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Scope
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Confidence
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Detected
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {paginatedOpportunities.map((opportunity) => (
+                <tr 
+                  key={opportunity.opportunity_id}
+                  onClick={() => handleOpportunityClick(opportunity.opportunity_id)}
+                  className="hover:bg-gray-50 cursor-pointer"
+                >
+                  <td className="px-6 py-4">
+                    <div className="text-sm font-medium text-gray-900">{opportunity.title}</div>
+                    <div className="text-sm text-gray-500">
+                      Detected {format(new Date(opportunity.detected_at), 'MMM d, yyyy')}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <Badge variant="outline" className="capitalize">
+                      {opportunity.type}
+                    </Badge>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="capitalize">{opportunity.scope}</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="w-32 bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full"
+                        style={{ width: `${opportunity.confidence_score * 100}%` }}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500">
+                    {format(new Date(opportunity.detected_at), 'MMM d, yyyy')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Pagination Controls */}
+          <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+            <div className="flex-1 flex justify-between sm:hidden">
+              <button
+                onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
+                disabled={currentPage === 1}
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
+                disabled={currentPage === totalPages}
+                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-lg font-medium text-gray-900">{opportunity.title}</h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  Detected {format(new Date(opportunity.detected_at), 'MMM d, yyyy')}
+                <p className="text-sm text-gray-700">
+                  Showing <span className="font-medium">{Math.min((currentPage - 1) * itemsPerPage + 1, opportunities.length)}</span>{' '}
+                  to <span className="font-medium">{Math.min(currentPage * itemsPerPage, opportunities.length)}</span>{' '}
+                  of <span className="font-medium">{opportunities.length}</span> results
                 </p>
               </div>
-              <div className="flex gap-2">
-                <Badge variant="secondary" className="bg-gray-100 text-gray-800">
-                  {opportunity.type}
-                </Badge>
-                <Badge variant="secondary" className={getConfidenceColor(opportunity.confidence_score)}>
-                  {(opportunity.confidence_score * 100).toFixed(0)}%
-                </Badge>
+              <div>
+                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                  <button
+                    onClick={() => setCurrentPage(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Previous</span>
+                    <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                  
+                  {/* Page Numbers */}
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNumber;
+                    if (totalPages <= 5) {
+                      pageNumber = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNumber = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNumber = totalPages - 4 + i;
+                    } else {
+                      pageNumber = currentPage - 2 + i;
+                    }
+                    
+                    return (
+                      <button
+                        key={pageNumber}
+                        onClick={() => setCurrentPage(pageNumber)}
+                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                          currentPage === pageNumber
+                            ? 'z-10 bg-indigo-50 border-indigo-500 text-indigo-600'
+                            : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        {pageNumber}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => setCurrentPage(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Next</span>
+                    <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                </nav>
               </div>
             </div>
           </div>
-        ))}
+        </div>
       </div>
-
-      <Flyout
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        title={previewData?.opportunity.title}
-      >
-        {previewData && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary" className="bg-gray-100 text-gray-800">
-                {previewData.opportunity.type}
-              </Badge>
-              <Badge variant="secondary" className="bg-gray-100 text-gray-800">
-                {previewData.opportunity.scope}
-              </Badge>
-              <Badge variant="secondary" className={getConfidenceColor(previewData.opportunity.confidence_score)}>
-                Confidence: {(previewData.opportunity.confidence_score * 100).toFixed(0)}%
-              </Badge>
-              <Badge variant="secondary" className={getEstimateColor(previewData.opportunity.effort_estimate)}>
-                Effort: {previewData.opportunity.effort_estimate}
-              </Badge>
-              <Badge variant="secondary" className={getValueColor(previewData.opportunity.potential_value)}>
-                Value: {previewData.opportunity.potential_value}
-              </Badge>
-            </div>
-
-            {previewData.channel && (
-              <div className="flex items-center gap-2 text-gray-600 text-sm">
-                <a 
-                  href={`https://slack.com/app_redirect?channel=${previewData.channel.channel_id}`} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full hover:bg-blue-100 transition-colors"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M12.186 8.672L18.743 2.115a1 1 0 00-1.414-1.414l-6.557 6.557L4.215.701a1 1 0 10-1.414 1.414l6.557 6.557L2.801 15.229a1 1 0 101.414 1.414l6.557-6.557 6.557 6.557a1 1 0 001.414-1.414l-6.557-6.557z"/>
-                  </svg>
-                  #{previewData.channel.name}
-                </a>
-              </div>
-            )}
-
-            <div>
-              <h3 className="font-medium text-gray-900 mb-2">Description</h3>
-              <p className="text-gray-600">{previewData.opportunity.description}</p>
-            </div>
-
-            <div>
-              <h3 className="font-medium text-gray-900 mb-2">Implicit Insights</h3>
-              <p className="text-gray-600">{previewData.opportunity.implicit_insights}</p>
-            </div>
-
-            <div className="border-t pt-4 mt-6">
-              <Link
-                href={`/opportunities/${previewData.opportunity.opportunity_id}`}
-                className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                onClick={(e) => e.stopPropagation()}
-              >
-                View Full Details
-              </Link>
-            </div>
-          </div>
-        )}
-      </Flyout>
     </div>
   );
 } 
