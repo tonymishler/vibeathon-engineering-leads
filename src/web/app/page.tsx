@@ -12,6 +12,14 @@ import dynamic from 'next/dynamic';
 import { OpportunitiesTable } from "@/components/OpportunitiesTable";
 import { HomeIcon as HomeIconOutline, ChevronRightIcon as ChevronRightIconOutline } from '@heroicons/react/24/outline';
 import type { ReactElement, ComponentProps } from 'react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const HomeIcon = HomeIconOutline as React.FC<React.SVGProps<SVGSVGElement>>;
 const ChevronRightIcon = ChevronRightIconOutline as React.FC<React.SVGProps<SVGSVGElement>>;
@@ -71,7 +79,10 @@ export default function OppVibePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [previewData, setPreviewData] = useState<{
+    opportunity: Opportunity;
+    channel?: { channel_id: string; name: string };
+  } | null>(null);
   const [chartState, setChartState] = useState<ChartState>({ type: 'channel' });
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [scopeFilter, setScopeFilter] = useState<string>('all');
@@ -81,16 +92,17 @@ export default function OppVibePage() {
   } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const uniqueTypes = useMemo(() => 
-    ['all', ...new Set(opportunities.map(opp => opp.type))],
-    [opportunities]
-  );
+  const uniqueTypes = useMemo(() => {
+    const types = new Set(opportunities.map(opp => opp.type));
+    return ['all', ...Array.from(types)].filter(Boolean);
+  }, [opportunities]);
   
-  const uniqueScopes = useMemo(() => 
-    ['all', ...new Set(opportunities.map(opp => opp.scope))],
-    [opportunities]
-  );
+  const uniqueScopes = useMemo(() => {
+    const scopes = new Set(opportunities.map(opp => opp.scope));
+    return ['all', ...Array.from(scopes)].filter(Boolean);
+  }, [opportunities]);
 
   const sortData = useCallback((data: Opportunity[]) => {
     if (!sortConfig) return data;
@@ -115,16 +127,42 @@ export default function OppVibePage() {
   };
 
   const filteredAndSortedOpportunities = useMemo(() => {
-    let filtered = opportunities;
+    console.log('Filtering opportunities:', {
+      total: opportunities.length,
+      searchTerm,
+      typeFilter,
+      scopeFilter
+    });
 
-    if (typeFilter !== 'all') {
+    let filtered = [...opportunities];
+
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(opp => {
+        const matches = 
+          opp.title.toLowerCase().includes(searchLower) ||
+          (opp.description || '').toLowerCase().includes(searchLower) ||
+          opp.type.toLowerCase().includes(searchLower) ||
+          opp.scope.toLowerCase().includes(searchLower);
+        return matches;
+      });
+      console.log('After search filter:', filtered.length);
+    }
+
+    // Apply type filter
+    if (typeFilter && typeFilter !== 'all') {
       filtered = filtered.filter(opp => opp.type === typeFilter);
+      console.log('After type filter:', filtered.length);
     }
 
-    if (scopeFilter !== 'all') {
+    // Apply scope filter
+    if (scopeFilter && scopeFilter !== 'all') {
       filtered = filtered.filter(opp => opp.scope === scopeFilter);
+      console.log('After scope filter:', filtered.length);
     }
 
+    // Apply chart filters
     if (chartState.filter) {
       if (chartState.filter.channel) {
         filtered = filtered.filter(opp => {
@@ -143,8 +181,10 @@ export default function OppVibePage() {
       }
     }
 
-    return sortData(filtered);
-  }, [opportunities, typeFilter, scopeFilter, chartState.filter, channelStats, sortData]);
+    const sorted = sortData(filtered);
+    console.log('Final filtered and sorted count:', sorted.length);
+    return sorted;
+  }, [opportunities, searchTerm, typeFilter, scopeFilter, chartState.filter, channelStats, sortData]);
 
   // Calculate pagination
   const paginatedOpportunities = useMemo(() => {
@@ -177,7 +217,15 @@ export default function OppVibePage() {
   }, []);
 
   const handlePreviewClick = async (opportunityId: string) => {
-    router.push(`/opportunities/${opportunityId}`);
+    try {
+      const response = await fetch(`/api/opportunities/${opportunityId}`);
+      if (!response.ok) throw new Error('Failed to fetch opportunity details');
+      const data = await response.json();
+      setPreviewData(data);
+      setPreviewOpen(true);
+    } catch (error) {
+      console.error('Error fetching opportunity details:', error);
+    }
   };
 
   // Prepare data for pie chart based on current state
@@ -504,38 +552,59 @@ export default function OppVibePage() {
             </CardHeader>
             <CardContent>
               <div className="flex gap-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <label htmlFor="type-filter" className="sr-only">Filter by type</label>
-                  <select
-                    id="type-filter"
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value)}
-                    className="block w-32 rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-600 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-white"
-                    aria-label="Filter opportunities by type"
-                  >
-                    {uniqueTypes.map(type => (
-                      <option key={type} value={type} className="text-gray-900">
-                        {type === 'all' ? 'All types' : type}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label htmlFor="scope-filter" className="sr-only">Filter by scope</label>
-                  <select
-                    id="scope-filter"
-                    value={scopeFilter}
-                    onChange={(e) => setScopeFilter(e.target.value)}
-                    className="block w-32 rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-600 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-white"
-                    aria-label="Filter opportunities by scope"
-                  >
-                    {uniqueScopes.map(scope => (
-                      <option key={scope} value={scope} className="text-gray-900">
-                        {scope === 'all' ? 'All scopes' : scope}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Input
+                  placeholder="Search opportunities..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    console.log('Search term changed:', e.target.value);
+                    setSearchTerm(e.target.value);
+                  }}
+                  className="max-w-sm"
+                />
+                <Select
+                  value={typeFilter}
+                  onValueChange={(value) => {
+                    console.log('Type filter changed:', value);
+                    setTypeFilter(value);
+                  }}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    {uniqueTypes
+                      .filter(t => t !== 'all')
+                      .sort()
+                      .map(type => (
+                        <SelectItem key={type} value={type}>
+                          {type}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={scopeFilter}
+                  onValueChange={(value) => {
+                    console.log('Scope filter changed:', value);
+                    setScopeFilter(value);
+                  }}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="All scopes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All scopes</SelectItem>
+                    {uniqueScopes
+                      .filter(s => s !== 'all')
+                      .sort()
+                      .map(scope => (
+                        <SelectItem key={scope} value={scope}>
+                          {scope}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <Table>
@@ -714,21 +783,15 @@ export default function OppVibePage() {
         >
           {previewData && (
             <div className="space-y-6">
-              <div className="flex flex-wrap gap-2">
+              <div className="flex items-center gap-4">
                 <Badge variant="secondary" className="bg-gray-100 text-gray-800">
                   {previewData.opportunity.type}
                 </Badge>
                 <Badge variant="secondary" className="bg-gray-100 text-gray-800">
                   {previewData.opportunity.scope}
                 </Badge>
-                <Badge variant="secondary" className={getConfidenceColor(previewData.opportunity.confidence_score)}>
+                <Badge variant="secondary" className="bg-green-100 text-green-800">
                   Confidence: {(previewData.opportunity.confidence_score * 100).toFixed(0)}%
-                </Badge>
-                <Badge variant="secondary" className={getEstimateColor(previewData.opportunity.effort_estimate)}>
-                  Effort: {previewData.opportunity.effort_estimate}
-                </Badge>
-                <Badge variant="secondary" className={getValueColor(previewData.opportunity.potential_value)}>
-                  Value: {previewData.opportunity.potential_value}
                 </Badge>
               </div>
 

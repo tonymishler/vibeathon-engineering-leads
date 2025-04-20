@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { OpportunitiesTable } from '@/components/OpportunitiesTable';
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -27,8 +27,57 @@ export default function OpportunitiesPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [scopeFilter, setScopeFilter] = useState('all');
   const itemsPerPage = 10;
   const router = useRouter();
+
+  // Get unique types and scopes
+  const uniqueTypes = useMemo(() => {
+    const types = new Set(opportunities.map(opp => opp.type));
+    return ['all', ...Array.from(types)].filter(Boolean);
+  }, [opportunities]);
+  
+  const uniqueScopes = useMemo(() => {
+    const scopes = new Set(opportunities.map(opp => opp.scope));
+    return ['all', ...Array.from(scopes)].filter(Boolean);
+  }, [opportunities]);
+
+  // Filter opportunities
+  const filteredOpportunities = useMemo(() => {
+    let filtered = [...opportunities];
+
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(opp => 
+        opp.title.toLowerCase().includes(searchLower) ||
+        (opp.description || '').toLowerCase().includes(searchLower) ||
+        opp.type.toLowerCase().includes(searchLower) ||
+        opp.scope.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Apply type filter
+    if (typeFilter && typeFilter !== 'all') {
+      filtered = filtered.filter(opp => opp.type === typeFilter);
+    }
+
+    // Apply scope filter
+    if (scopeFilter && scopeFilter !== 'all') {
+      filtered = filtered.filter(opp => opp.scope === scopeFilter);
+    }
+
+    return filtered;
+  }, [opportunities, searchTerm, typeFilter, scopeFilter]);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredOpportunities.length / itemsPerPage);
+  const paginatedOpportunities = filteredOpportunities.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   useEffect(() => {
     async function fetchOpportunities() {
@@ -54,13 +103,6 @@ export default function OpportunitiesPage() {
   const handleOpportunityClick = (opportunityId: string) => {
     router.push(`/opportunities/${opportunityId}`);
   };
-
-  // Calculate pagination
-  const totalPages = Math.ceil(opportunities.length / itemsPerPage);
-  const paginatedOpportunities = opportunities.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
 
   if (loading) {
     return (
@@ -93,30 +135,46 @@ export default function OpportunitiesPage() {
           <div className="relative">
             <input
               type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search opportunities..."
               className="w-96 rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-black/5"
             />
           </div>
           
           <div className="flex items-center gap-2">
-            <label htmlFor="type-filter" className="sr-only">Filter by type</label>
             <select
-              id="type-filter"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
               className="block rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-600 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-black/5"
-              aria-label="Filter opportunities by type"
+              aria-label="Filter by type"
+              title="Filter opportunities by type"
             >
-              <option>All types</option>
+              <option value="all">All types</option>
+              {uniqueTypes
+                .filter(t => t !== 'all')
+                .sort()
+                .map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
             </select>
           </div>
           
           <div className="flex items-center gap-2">
-            <label htmlFor="scope-filter" className="sr-only">Filter by scope</label>
             <select
-              id="scope-filter"
+              value={scopeFilter}
+              onChange={(e) => setScopeFilter(e.target.value)}
               className="block rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-600 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-black/5"
-              aria-label="Filter opportunities by scope"
+              aria-label="Filter by scope"
+              title="Filter opportunities by scope"
             >
-              <option>All scopes</option>
+              <option value="all">All scopes</option>
+              {uniqueScopes
+                .filter(s => s !== 'all')
+                .sort()
+                .map(scope => (
+                  <option key={scope} value={scope}>{scope}</option>
+                ))}
             </select>
           </div>
         </div>
@@ -144,26 +202,23 @@ export default function OpportunitiesPage() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {paginatedOpportunities.map((opportunity) => (
-                <tr 
+                <tr
                   key={opportunity.opportunity_id}
                   onClick={() => handleOpportunityClick(opportunity.opportunity_id)}
                   className="hover:bg-gray-50 cursor-pointer"
                 >
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">{opportunity.title}</div>
-                    <div className="text-sm text-gray-500">
-                      Detected {format(new Date(opportunity.detected_at), 'MMM d, yyyy')}
-                    </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <Badge variant="outline" className="capitalize">
                       {opportunity.type}
                     </Badge>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <span className="capitalize">{opportunity.scope}</span>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <div className="w-32 bg-gray-200 rounded-full h-2">
                       <div
                         className="bg-blue-500 h-2 rounded-full"
@@ -171,90 +226,39 @@ export default function OpportunitiesPage() {
                       />
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {format(new Date(opportunity.detected_at), 'MMM d, yyyy')}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
 
-          {/* Pagination Controls */}
-          <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-            <div className="flex-1 flex justify-between sm:hidden">
-              <button
-                onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
-                disabled={currentPage === 1}
-                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
-                disabled={currentPage === totalPages}
-                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm text-gray-700">
-                  Showing <span className="font-medium">{Math.min((currentPage - 1) * itemsPerPage + 1, opportunities.length)}</span>{' '}
-                  to <span className="font-medium">{Math.min(currentPage * itemsPerPage, opportunities.length)}</span>{' '}
-                  of <span className="font-medium">{opportunities.length}</span> results
-                </p>
-              </div>
-              <div>
-                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                  <button
-                    onClick={() => setCurrentPage(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
-                  >
-                    <span className="sr-only">Previous</span>
-                    <ChevronLeft className="h-5 w-5" aria-hidden="true" />
-                  </button>
-                  
-                  {/* Page Numbers */}
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNumber;
-                    if (totalPages <= 5) {
-                      pageNumber = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNumber = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNumber = totalPages - 4 + i;
-                    } else {
-                      pageNumber = currentPage - 2 + i;
-                    }
-                    
-                    return (
-                      <button
-                        key={pageNumber}
-                        onClick={() => setCurrentPage(pageNumber)}
-                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                          currentPage === pageNumber
-                            ? 'z-10 bg-indigo-50 border-indigo-500 text-indigo-600'
-                            : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        {pageNumber}
-                      </button>
-                    );
-                  })}
-
-                  <button
-                    onClick={() => setCurrentPage(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
-                  >
-                    <span className="sr-only">Next</span>
-                    <ChevronRight className="h-5 w-5" aria-hidden="true" />
-                  </button>
-                </nav>
-              </div>
-            </div>
+        {/* Pagination */}
+        <div className="mt-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1 rounded border border-gray-300 disabled:opacity-50"
+              aria-label="Previous page"
+              title="Go to previous page"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <span className="text-sm text-gray-600">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1 rounded border border-gray-300 disabled:opacity-50"
+              aria-label="Next page"
+              title="Go to next page"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
           </div>
         </div>
       </div>
